@@ -1,22 +1,22 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: trip-service
+  name: ai-service
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app: trip-service
+      app: ai-service
   template:
     metadata:
       labels:
-        app: trip-service
+        app: ai-service
     spec:
       containers:
-        - name: trip-service
-          image: ride-sharing/trip-service
+        - name: ai-service
+          image: askshop/ai-service
           ports:
-            - containerPort: 8083
+            - containerPort: 8087
           resources:
             requests:
               memory: "64Mi"
@@ -28,12 +28,12 @@ spec:
 apiVersion: v1
 kind: Service
 metadata:
-  name: trip-service
+  name: ai-service
 spec:
   selector:
-    app: trip-service
+    app: ai-service
   ports:
-    - port: 8083
+    - port: 8087
       name: http
-      targetPort: 8083
+      targetPort: 8087
   type: ClusterIP

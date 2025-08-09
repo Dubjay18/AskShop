@@ -1,9 +1,16 @@
 package domain
 
 import (
+	"errors"
+
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
+)
+
+var (
+	ErrUserAlreadyExists  = errors.New("user already exists")
+	ErrInvalidCredentials = errors.New("invalid email or password")
 )
 
 type UserModel struct {
@@ -19,4 +26,6 @@ type UserModel struct {
 type UserRepository interface {
 	CreateUser(ctx *gin.Context, user *UserModel) (*UserModel, error)
 	GetUser(ctx *gin.Context, userID string) (*UserModel, error)
+	GetUserByEmail(ctx *gin.Context, email string) (*UserModel, error)
+	GetUserByIDOrEmail(ctx *gin.Context, identifier string) (*UserModel, error)
 }

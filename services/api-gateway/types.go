@@ -9,6 +9,14 @@ type APIResponse struct {
 }
 
 // User represents a user in the system
+type User struct {
+	ID       int64  `json:"id"`
+	Name     string `json:"name"`
+	Email    string `json:"email"`
+	Password string `json:"-"` // Password is never returned in JSON
+}
+
+// UserRegistrationRequest represents a user registration request
 type UserRegistrationRequest struct {
 	ID        int64  `json:"id"`
 	FirstName string `json:"firstName"`

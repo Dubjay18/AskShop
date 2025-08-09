@@ -31,6 +31,9 @@ func main() {
 			"message": "Welcome to AskShop API Gateway",
 			"version": "1.0.0",
 			"endpoints": []string{
+				"/api/v1/auth/register - User registration",
+				"/api/v1/auth/login - User login",
+				"/api/v1/auth/profile - Get user profile (protected)",
 				"/api/v1/products - List all products",
 				"/api/v1/products/:id - Get product by ID",
 				"/api/v1/users - List all users",

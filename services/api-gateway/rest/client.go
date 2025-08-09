@@ -80,6 +80,11 @@ func (c *ServiceClient) doRequest(ctx context.Context, method, path string, body
 		req.Header.Set("X-Request-ID", reqID)
 	}
 
+	// Add authorization header if present in context
+	if authHeader, ok := ctx.Value("authorization").(string); ok {
+		req.Header.Set("Authorization", authHeader)
+	}
+
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
 		return fmt.Errorf("error making request to %s: %w", c.serviceName, err)

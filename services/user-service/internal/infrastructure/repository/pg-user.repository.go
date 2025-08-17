@@ -23,12 +23,17 @@ type UserRepository struct {
 func (ur *UserRepository) CreateUser(ctx *gin.Context, user *domain.UserModel) (*domain.UserModel, error) {
 	// Create a new user based on the input or set default values if needed
 	newUser := domain.UserModel{
-		ID:        uuid.New(),
 		FirstName: user.FirstName,
 		LastName:  user.LastName,
 		Age:       user.Age,
 		Email:     user.Email,
 		Password:  user.Password,
+	}
+	// If caller provided an ID (for example when syncing with external provider), use it.
+	if user.ID != uuid.Nil {
+		newUser.ID = user.ID
+	} else {
+		newUser.ID = uuid.New()
 	}
 	// generate random avatar
 	newUser.Avatar = util.GetRandomAvatar(newUser.ID)

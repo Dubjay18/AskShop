@@ -6,11 +6,13 @@ import (
 	"askshop/services/user-service/internal/infrastructure/repository"
 	"askshop/services/user-service/internal/service"
 	"askshop/shared/auth"
+	"askshop/shared/contracts"
 	"askshop/shared/db"
 	"askshop/shared/env"
 	"log"
 
 	"github.com/gin-gonic/gin"
+	"gorm.io/gorm"
 )
 
 var (
@@ -25,9 +27,11 @@ func main() {
 		gin.SetMode(gin.ReleaseMode)
 	}
 
-	// Initialize database connection
+	// Initialize database connection with auto-migration
 	cfg := db.LoadConfigFromEnv()
-	dbConn, err := db.Connect(cfg)
+	dbConn, err := db.Connect(cfg, db.WithAutoMigrations(func(db *gorm.DB) error {
+		return db.AutoMigrate(&domain.UserModel{})
+	}))
 	if err != nil {
 		log.Printf("DB connection failed: %v", err)
 	}
@@ -66,7 +70,7 @@ func main() {
 		c.Next()
 	})
 
-	// JWT manager shared
+	// JWT manager shared (kept for compatibility if local tokens are still used elsewhere)
 	jwtManager := auth.NewManager(auth.LoadConfig())
 
 	// Register routes
@@ -77,10 +81,21 @@ func main() {
 	// Additional specific routes for different lookup methods
 	router.GET("/api/users/by-id/:id", userHandler.GetUserById)
 	router.GET("/api/users/by-email", userHandler.GetUserByEmail)
+	// Auth endpoints (register/login)
+	router.POST(contracts.Routes.Auth.Register, userHandler.CreateUser)
+	router.POST(contracts.Routes.Auth.Login, userHandler.Login)
 
 	// Example protected group (future write operations)
 	protected := router.Group("/api/users/admin")
-	protected.Use(auth.AuthMiddleware(jwtManager))
+	// Use Supabase for token validation if SUPABASE_URL and SUPABASE_KEY are provided
+	supabaseURL := env.GetString("SUPABASE_URL", "")
+	supabaseKey := env.GetString("SUPABASE_KEY", "")
+	if supabaseURL != "" && supabaseKey != "" {
+		protected.Use(auth.SupabaseAuthMiddleware(supabaseURL, supabaseKey))
+	} else {
+		// fallback to local JWT parsing
+		protected.Use(auth.AuthMiddleware(jwtManager))
+	}
 	protected.GET("/me", func(c *gin.Context) {
 		if claims, ok := auth.GetClaims(c); ok {
 			c.JSON(200, gin.H{"claims": claims})

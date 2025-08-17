@@ -47,7 +47,7 @@ func WithAutoMigrations(fns ...func(db *gorm.DB) error) Option {
 func LoadConfigFromEnv() Config {
 	return Config{
 		DSN:          env.GetString("DATABASE_URL", ""),
-		Host:         env.GetString("DB_HOST", "localhost"),
+		Host:         env.GetString("DB_HOST", "postgres"),
 		Port:         env.GetInt("DB_PORT", 5432),
 		User:         env.GetString("DB_USER", "postgres"),
 		Password:     env.GetString("DB_PASSWORD", "postgres"),
@@ -61,12 +61,17 @@ func LoadConfigFromEnv() Config {
 
 // dsn builds DSN if not explicitly provided
 func (c Config) dsn() string {
+	// Use DATABASE_URL if provided (takes precedence)
 	if c.DSN != "" {
+		log.Printf("Using DATABASE_URL for connection")
 		return c.DSN
 	}
-	params := "sslmode=%s search_path=%s"
+
+	// Build DSN from individual components
+	log.Printf("Building DSN from individual DB_* environment variables")
+	params := fmt.Sprintf("sslmode=%s search_path=%s", c.SSLMode, c.SearchPath)
 	return fmt.Sprintf("host=%s port=%d user=%s password=%s dbname=%s %s",
-		c.Host, c.Port, c.User, c.Password, c.Database, fmt.Sprintf(params, c.SSLMode, c.SearchPath))
+		c.Host, c.Port, c.User, c.Password, c.Database, params)
 }
 
 // Connect returns a singleton *gorm.DB. Subsequent calls reuse the same connection.

@@ -5,7 +5,9 @@ import (
 	"askshop/services/user-service/pkg/types"
 	"askshop/services/user-service/pkg/utils"
 	"askshop/shared/auth"
+
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 	"gorm.io/gorm"
 )
 
@@ -14,6 +16,7 @@ type UserServiceInterface interface {
 	GetUserByEmail(ctx *gin.Context, email string) (*domain.UserModel, error)
 	GetUserByIDOrEmail(ctx *gin.Context, identifier string) (*domain.UserModel, error)
 	RegisterUser(ctx *gin.Context, userRequest types.UserRegistrationRequest) (*domain.UserModel, error)
+	RegisterUserWithExternalID(ctx *gin.Context, userRequest types.UserRegistrationRequest, externalID string) (*domain.UserModel, error)
 	LoginUser(ctx *gin.Context, loginRequest types.UserLoginRequest) (*domain.UserModel, string, error)
 }
 
@@ -57,7 +60,7 @@ func (svc *UserService) RegisterUser(ctx *gin.Context, userRequest types.UserReg
 	_, err := svc.userRepo.GetUserByIDOrEmail(ctx, userRequest.Email)
 	if err == nil {
 		// User already exists
-		return nil, domain.ErrInvalidCredentials
+		return nil, domain.ErrUserAlreadyExists
 	} else if err != gorm.ErrRecordNotFound {
 		// An unexpected error occurred
 		return nil, err
@@ -72,6 +75,41 @@ func (svc *UserService) RegisterUser(ctx *gin.Context, userRequest types.UserReg
 		Password:  hashedPassword,
 		Age:       userRequest.Age,
 		// Age will be set to 0 as default, can be updated later
+	}
+
+	createdUser, err := svc.userRepo.CreateUser(ctx, user)
+	if err != nil {
+		return nil, err
+	}
+
+	return createdUser, nil
+}
+
+// RegisterUserWithExternalID registers a user using an external auth provider's id
+// The password is not stored locally when using an external provider.
+func (svc *UserService) RegisterUserWithExternalID(ctx *gin.Context, userRequest types.UserRegistrationRequest, externalID string) (*domain.UserModel, error) {
+	// check if user exists already by email
+	_, err := svc.userRepo.GetUserByIDOrEmail(ctx, userRequest.Email)
+	if err == nil {
+		return nil, domain.ErrInvalidCredentials
+	} else if err != gorm.ErrRecordNotFound {
+		return nil, err
+	}
+
+	// Build user model. Use externalID as the ID if provided.
+	user := &domain.UserModel{
+		FirstName: userRequest.FirstName,
+		LastName:  userRequest.LastName,
+		Email:     userRequest.Email,
+		Age:       userRequest.Age,
+		Password:  "", // password managed by external provider
+	}
+
+	if externalID != "" {
+		// Attempt to set UUID from externalID
+		if uid, err := uuid.Parse(externalID); err == nil {
+			user.ID = uid
+		}
 	}
 
 	createdUser, err := svc.userRepo.CreateUser(ctx, user)

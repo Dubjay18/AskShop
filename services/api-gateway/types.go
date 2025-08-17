@@ -8,21 +8,26 @@ type APIResponse struct {
 	Error   string      `json:"error,omitempty"`
 }
 
-// User represents a user in the system
+// User represents a user returned from the user service (UUID IDs, separated names)
 type User struct {
-	ID       int64  `json:"id"`
-	Name     string `json:"name"`
-	Email    string `json:"email"`
-	Password string `json:"-"` // Password is never returned in JSON
+	ID        string `json:"id"`
+	FirstName string `json:"firstName,omitempty"`
+	LastName  string `json:"lastName,omitempty"`
+	Email     string `json:"email"`
+	Age       int    `json:"age,omitempty"`
+	// Derived / legacy combined name (not part of user-service payload directly)
+	Name string `json:"name,omitempty"`
+	// Never exposed, placeholder if needed for internal flows
+	Password string `json:"-"`
 }
 
-// UserRegistrationRequest represents a user registration request
+// UserRegistrationRequest forwarded to user service
 type UserRegistrationRequest struct {
-	ID        int64  `json:"id"`
-	FirstName string `json:"firstName"`
-	LastName  string `json:"lastName"`
-	Email     string `json:"email"`
-	Password  string `json:"-"` // Password is never returned in JSON
+	FirstName string `json:"firstName" binding:"required,min=2"`
+	LastName  string `json:"lastName" binding:"required,min=2"`
+	Email     string `json:"email" binding:"required,email"`
+	Password  string `json:"password" binding:"required,min=6"`
+	Age       int    `json:"age,omitempty" binding:"omitempty,gte=0,lte=130"`
 }
 
 // Product represents a product in the system

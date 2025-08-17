@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 	"time"
 )
 
@@ -21,13 +22,20 @@ type ServiceClient struct {
 
 // NewServiceClient creates a new service client
 func NewServiceClient(serviceName string) *ServiceClient {
-	baseURL := env.GetString(fmt.Sprintf("%s_SERVICE_URL", serviceName), fmt.Sprintf("http://%s-service:8080", serviceName))
+	// Env key in UPPERCASE: <SERVICE>_SERVICE_URL
+	key := fmt.Sprintf("%s_SERVICE_URL", strings.ToUpper(serviceName))
+	// Choose default port per service if we know it, else fallback 8080
+	port := "8080"
+	switch strings.ToLower(serviceName) {
+	case "user":
+		port = "8084" // user-service default from its main.go
+	}
+	def := fmt.Sprintf("http://%s-service:%s", strings.ToLower(serviceName), port)
+	baseURL := env.GetString(key, def)
 	return &ServiceClient{
 		baseURL:     baseURL,
 		serviceName: serviceName,
-		httpClient: &http.Client{
-			Timeout: 10 * time.Second,
-		},
+		httpClient:  &http.Client{Timeout: 10 * time.Second},
 	}
 }
 
@@ -76,12 +84,11 @@ func (c *ServiceClient) doRequest(ctx context.Context, method, path string, body
 	}
 
 	// Add request ID if present in context
-	if reqID, ok := ctx.Value("request_id").(string); ok {
+	if reqID, ok := ctx.Value("request_id").(string); ok && reqID != "" {
 		req.Header.Set("X-Request-ID", reqID)
 	}
-
 	// Add authorization header if present in context
-	if authHeader, ok := ctx.Value("authorization").(string); ok {
+	if authHeader, ok := ctx.Value("authorization").(string); ok && authHeader != "" {
 		req.Header.Set("Authorization", authHeader)
 	}
 
@@ -117,7 +124,6 @@ func (c *ServiceClient) doRequest(ctx context.Context, method, path string, body
 		// Try direct unmarshaling if APIResponse structure doesn't match
 		return json.Unmarshal(respBody, result)
 	}
-
 	// If the response is in APIResponse format, unmarshal the data field
 	if apiResp.Data != nil {
 		jsonData, err := json.Marshal(apiResp.Data)
@@ -126,6 +132,5 @@ func (c *ServiceClient) doRequest(ctx context.Context, method, path string, body
 		}
 		return json.Unmarshal(jsonData, result)
 	}
-
 	return nil
 }

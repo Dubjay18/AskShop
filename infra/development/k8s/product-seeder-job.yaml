@@ -1,0 +1,53 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: product-seeder
+spec:
+  template:
+    spec:
+      containers:
+      - name: seeder
+        image: golang:1.21
+        command: ["/bin/bash"]
+        args:
+          - -c
+          - |
+            # Clone the repository and build the seeder
+            git clone https://github.com/Dubjay18/AskShop.git /workspace
+            cd /workspace
+            go mod download
+            go build -o build/product-seeder ./services/product-service/cmd/seed/
+            ./build/product-seeder
+        env:
+        - name: DATABASE_URL
+          valueFrom:
+            secretKeyRef:
+              name: db-credentials
+              key: DATABASE_URL
+        - name: DB_HOST
+          valueFrom:
+            secretKeyRef:
+              name: db-credentials
+              key: DB_HOST
+        - name: DB_PORT
+          valueFrom:
+            secretKeyRef:
+              name: db-credentials
+              key: DB_PORT
+        - name: DB_USER
+          valueFrom:
+            secretKeyRef:
+              name: db-credentials
+              key: DB_USER
+        - name: DB_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: db-credentials
+              key: DB_PASSWORD
+        - name: DB_NAME
+          valueFrom:
+            secretKeyRef:
+              name: db-credentials
+              key: DB_NAME
+      restartPolicy: Never
+  backoffLimit: 2

@@ -2,11 +2,11 @@ package service
 
 import (
 	"askshop/services/cart-service/internal/domain"
-	"context"
 	"fmt"
 	"log"
 	"time"
 
+	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"gorm.io/datatypes"
 )
@@ -28,7 +28,7 @@ func NewCartService(repo domain.CartRepository, config domain.CartConfig) domain
 }
 
 // GetOrCreateCart gets an existing cart or creates a new one
-func (s *CartServiceImpl) GetOrCreateCart(ctx context.Context, userID string, sessionID string) (*domain.Cart, error) {
+func (s *CartServiceImpl) GetOrCreateCart(ctx *gin.Context, userID string, sessionID string) (*domain.Cart, error) {
 	// Try to get existing cart by user ID
 	cart, err := s.repo.GetCartByUserID(ctx, userID)
 	if err == nil {
@@ -72,7 +72,7 @@ func (s *CartServiceImpl) GetOrCreateCart(ctx context.Context, userID string, se
 }
 
 // GetCart gets a cart by user ID
-func (s *CartServiceImpl) GetCart(ctx context.Context, userID string) (*domain.Cart, error) {
+func (s *CartServiceImpl) GetCart(ctx *gin.Context, userID string) (*domain.Cart, error) {
 	cart, err := s.repo.GetCartByUserID(ctx, userID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get cart: %w", err)
@@ -87,7 +87,7 @@ func (s *CartServiceImpl) GetCart(ctx context.Context, userID string) (*domain.C
 }
 
 // GetCartSummary gets cart summary with totals
-func (s *CartServiceImpl) GetCartSummary(ctx context.Context, userID string) (*domain.CartSummary, error) {
+func (s *CartServiceImpl) GetCartSummary(ctx *gin.Context, userID string) (*domain.CartSummary, error) {
 	cart, err := s.GetCart(ctx, userID)
 	if err != nil {
 		return nil, err
@@ -98,7 +98,7 @@ func (s *CartServiceImpl) GetCartSummary(ctx context.Context, userID string) (*d
 }
 
 // AddItem adds an item to the cart
-func (s *CartServiceImpl) AddItem(ctx context.Context, userID string, productID uuid.UUID, quantity int, variations datatypes.JSONMap) (*domain.Cart, error) {
+func (s *CartServiceImpl) AddItem(ctx *gin.Context, userID string, productID uuid.UUID, quantity int, variations datatypes.JSONMap) (*domain.Cart, error) {
 	// Get or create cart
 	cart, err := s.GetOrCreateCart(ctx, userID, "")
 	if err != nil {
@@ -149,7 +149,7 @@ func (s *CartServiceImpl) AddItem(ctx context.Context, userID string, productID 
 }
 
 // UpdateItemQuantity updates the quantity of a cart item
-func (s *CartServiceImpl) UpdateItemQuantity(ctx context.Context, userID string, itemID uuid.UUID, quantity int) (*domain.Cart, error) {
+func (s *CartServiceImpl) UpdateItemQuantity(ctx *gin.Context, userID string, itemID uuid.UUID, quantity int) (*domain.Cart, error) {
 	// Validate quantity
 	if err := s.manager.ValidateQuantityUpdate(quantity); err != nil {
 		return nil, err
@@ -175,7 +175,7 @@ func (s *CartServiceImpl) UpdateItemQuantity(ctx context.Context, userID string,
 }
 
 // RemoveItem removes an item from the cart
-func (s *CartServiceImpl) RemoveItem(ctx context.Context, userID string, itemID uuid.UUID) error {
+func (s *CartServiceImpl) RemoveItem(ctx *gin.Context, userID string, itemID uuid.UUID) error {
 	if err := s.repo.RemoveCartItem(ctx, itemID); err != nil {
 		return fmt.Errorf("failed to remove cart item: %w", err)
 	}
@@ -183,7 +183,7 @@ func (s *CartServiceImpl) RemoveItem(ctx context.Context, userID string, itemID 
 }
 
 // ClearCart removes all items from the cart
-func (s *CartServiceImpl) ClearCart(ctx context.Context, userID string) error {
+func (s *CartServiceImpl) ClearCart(ctx *gin.Context, userID string) error {
 	cart, err := s.GetCart(ctx, userID)
 	if err != nil {
 		return err
@@ -197,7 +197,7 @@ func (s *CartServiceImpl) ClearCart(ctx context.Context, userID string) error {
 }
 
 // ConvertCart marks a cart as converted (e.g., when order is placed)
-func (s *CartServiceImpl) ConvertCart(ctx context.Context, userID string) error {
+func (s *CartServiceImpl) ConvertCart(ctx *gin.Context, userID string) error {
 	cart, err := s.GetCart(ctx, userID)
 	if err != nil {
 		return err
@@ -212,7 +212,7 @@ func (s *CartServiceImpl) ConvertCart(ctx context.Context, userID string) error 
 }
 
 // SaveForLater moves an item from cart to saved items
-func (s *CartServiceImpl) SaveForLater(ctx context.Context, userID string, itemID uuid.UUID) error {
+func (s *CartServiceImpl) SaveForLater(ctx *gin.Context, userID string, itemID uuid.UUID) error {
 	// Get cart item
 	item, err := s.repo.GetCartItem(ctx, itemID)
 	if err != nil {
@@ -241,19 +241,19 @@ func (s *CartServiceImpl) SaveForLater(ctx context.Context, userID string, itemI
 }
 
 // GetSavedItems gets all saved items for a user
-func (s *CartServiceImpl) GetSavedItems(ctx context.Context, userID string) ([]domain.SavedItem, error) {
+func (s *CartServiceImpl) GetSavedItems(ctx *gin.Context, userID string) ([]domain.SavedItem, error) {
 	return s.repo.GetSavedItems(ctx, userID)
 }
 
 // MoveToCart moves a saved item back to cart
-func (s *CartServiceImpl) MoveToCart(ctx context.Context, userID string, savedItemID uuid.UUID) error {
+func (s *CartServiceImpl) MoveToCart(ctx *gin.Context, userID string, savedItemID uuid.UUID) error {
 	// This would involve getting the saved item and adding it back to cart
 	// Implementation depends on your specific requirements
 	return s.repo.MoveSavedItemToCart(ctx, userID, savedItemID)
 }
 
 // RemoveSavedItem removes a saved item
-func (s *CartServiceImpl) RemoveSavedItem(ctx context.Context, userID string, savedItemID uuid.UUID) error {
+func (s *CartServiceImpl) RemoveSavedItem(ctx *gin.Context, userID string, savedItemID uuid.UUID) error {
 	// Get saved item to find product ID
 	savedItems, err := s.GetSavedItems(ctx, userID)
 	if err != nil {
@@ -276,7 +276,7 @@ func (s *CartServiceImpl) RemoveSavedItem(ctx context.Context, userID string, sa
 }
 
 // MergeAnonymousCart merges an anonymous cart with a user's cart
-func (s *CartServiceImpl) MergeAnonymousCart(ctx context.Context, sessionID string, userID string) (*domain.Cart, error) {
+func (s *CartServiceImpl) MergeAnonymousCart(ctx *gin.Context, sessionID string, userID string) (*domain.Cart, error) {
 	// Get anonymous cart
 	anonymousCart, err := s.repo.GetCartBySessionID(ctx, sessionID)
 	if err != nil {
@@ -320,17 +320,17 @@ func (s *CartServiceImpl) MergeAnonymousCart(ctx context.Context, sessionID stri
 }
 
 // GetAbandonedCarts gets carts that haven't been updated recently
-func (s *CartServiceImpl) GetAbandonedCarts(ctx context.Context, since time.Time) ([]domain.Cart, error) {
+func (s *CartServiceImpl) GetAbandonedCarts(ctx *gin.Context, since time.Time) ([]domain.Cart, error) {
 	return s.repo.GetAbandonedCarts(ctx, &since)
 }
 
 // CleanupExpiredCarts removes expired carts
-func (s *CartServiceImpl) CleanupExpiredCarts(ctx context.Context) (int64, error) {
+func (s *CartServiceImpl) CleanupExpiredCarts(ctx *gin.Context) (int64, error) {
 	return s.repo.CleanupExpiredCarts(ctx)
 }
 
 // ValidateCartForCheckout validates cart before checkout
-func (s *CartServiceImpl) ValidateCartForCheckout(ctx context.Context, userID string) (*domain.CartValidationResult, error) {
+func (s *CartServiceImpl) ValidateCartForCheckout(ctx *gin.Context, userID string) (*domain.CartValidationResult, error) {
 	cart, err := s.GetCart(ctx, userID)
 	if err != nil {
 		return &domain.CartValidationResult{

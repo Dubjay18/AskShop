@@ -1,42 +1,41 @@
 package domain
 
 import (
-	"context"
-	"time"
-
+	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"gorm.io/datatypes"
+	"time"
 )
 
 // CartService defines the business logic interface for cart operations
 type CartService interface {
 	// Cart management
-	GetOrCreateCart(ctx context.Context, userID string, sessionID string) (*Cart, error)
-	GetCart(ctx context.Context, userID string) (*Cart, error)
-	GetCartSummary(ctx context.Context, userID string) (*CartSummary, error)
-	ClearCart(ctx context.Context, userID string) error
-	ConvertCart(ctx context.Context, userID string) error // Mark cart as converted to order
+	GetOrCreateCart(ctx *gin.Context, userID string, sessionID string) (*Cart, error)
+	GetCart(ctx *gin.Context, userID string) (*Cart, error)
+	GetCartSummary(ctx *gin.Context, userID string) (*CartSummary, error)
+	ClearCart(ctx *gin.Context, userID string) error
+	ConvertCart(ctx *gin.Context, userID string) error // Mark cart as converted to order
 
 	// Item management
-	AddItem(ctx context.Context, userID string, productID uuid.UUID, quantity int, variations datatypes.JSONMap) (*Cart, error)
-	UpdateItemQuantity(ctx context.Context, userID string, itemID uuid.UUID, quantity int) (*Cart, error)
-	RemoveItem(ctx context.Context, userID string, itemID uuid.UUID) error
+	AddItem(ctx *gin.Context, userID string, productID uuid.UUID, quantity int, variations datatypes.JSONMap) (*Cart, error)
+	UpdateItemQuantity(ctx *gin.Context, userID string, itemID uuid.UUID, quantity int) (*Cart, error)
+	RemoveItem(ctx *gin.Context, userID string, itemID uuid.UUID) error
 
 	// Wishlist/Save for later
-	SaveForLater(ctx context.Context, userID string, itemID uuid.UUID) error
-	GetSavedItems(ctx context.Context, userID string) ([]SavedItem, error)
-	MoveToCart(ctx context.Context, userID string, savedItemID uuid.UUID) error
-	RemoveSavedItem(ctx context.Context, userID string, savedItemID uuid.UUID) error
+	SaveForLater(ctx *gin.Context, userID string, itemID uuid.UUID) error
+	GetSavedItems(ctx *gin.Context, userID string) ([]SavedItem, error)
+	MoveToCart(ctx *gin.Context, userID string, savedItemID uuid.UUID) error
+	RemoveSavedItem(ctx *gin.Context, userID string, savedItemID uuid.UUID) error
 
 	// Cart migration (anonymous to authenticated)
-	MergeAnonymousCart(ctx context.Context, sessionID string, userID string) (*Cart, error)
+	MergeAnonymousCart(ctx *gin.Context, sessionID string, userID string) (*Cart, error)
 
 	// Analytics and maintenance
-	GetAbandonedCarts(ctx context.Context, since time.Time) ([]Cart, error)
-	CleanupExpiredCarts(ctx context.Context) (int64, error)
+	GetAbandonedCarts(ctx *gin.Context, since time.Time) ([]Cart, error)
+	CleanupExpiredCarts(ctx *gin.Context) (int64, error)
 
 	// Validation
-	ValidateCartForCheckout(ctx context.Context, userID string) (*CartValidationResult, error)
+	ValidateCartForCheckout(ctx *gin.Context, userID string) (*CartValidationResult, error)
 }
 
 // CartValidationResult represents the result of cart validation for checkout

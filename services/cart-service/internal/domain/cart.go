@@ -1,22 +1,21 @@
 package domain
 
 import (
-	"context"
-	"time"
-
+	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"gorm.io/datatypes"
 	"gorm.io/gorm"
+	"time"
 )
 
 // CartInterface defines the contract for cart operations
 type CartInterface interface {
-	GetCartByUserID(ctx context.Context, userID string) (*Cart, error)
-	AddItemToCart(ctx context.Context, userID string, item *CartItem) (*Cart, error)
-	UpdateCartItem(ctx context.Context, userID string, itemID uuid.UUID, quantity int) (*Cart, error)
-	RemoveItemFromCart(ctx context.Context, userID string, itemID uuid.UUID) error
-	ClearCart(ctx context.Context, userID string) error
-	GetCartTotal(ctx context.Context, userID string) (*CartSummary, error)
+	GetCartByUserID(ctx *gin.Context, userID string) (*Cart, error)
+	AddItemToCart(ctx *gin.Context, userID string, item *CartItem) (*Cart, error)
+	UpdateCartItem(ctx *gin.Context, userID string, itemID uuid.UUID, quantity int) (*Cart, error)
+	RemoveItemFromCart(ctx *gin.Context, userID string, itemID uuid.UUID) error
+	ClearCart(ctx *gin.Context, userID string) error
+	GetCartTotal(ctx *gin.Context, userID string) (*CartSummary, error)
 }
 
 // ---------- Core Models ----------

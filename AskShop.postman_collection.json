@@ -1,0 +1,64 @@
+{
+  "info": {
+    "_postman_id": "b6c7d4e8-1c2f-4e2a-a9f4-askshop-local-dev",
+    "name": "AskShop API",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "description": "Postman collection for AskShop services (API Gateway, User Service, Product Service)."
+  },
+  "item": [
+    {
+      "name": "API Gateway",
+      "item": [
+        {
+          "name": "Root",
+          "request": {"method": "GET", "url": {"raw": "{{base_gateway}}/", "host": ["{{base_gateway}}"], "path": [""]}},
+          "response": []
+        },
+        {
+          "name": "Auth Register",
+          "request": {"method": "POST", "header": [{"key": "Content-Type", "value": "application/json"}], "body": {"mode": "raw", "raw": "{\n  \"email\": \"test@example.com\",\n  \"password\": \"Password123!\",\n  \"first_name\": \"Test\",\n  \"last_name\": \"User\"\n}"}, "url": {"raw": "{{base_gateway}}/api/v1/auth/register", "host": ["{{base_gateway}}"], "path": ["api","v1","auth","register"]}},
+          "response": []
+        },
+        {
+          "name": "Auth Login (Gateway - placeholder until implemented)",
+          "request": {"method": "POST", "header": [{"key": "Content-Type", "value": "application/json"}], "body": {"mode": "raw", "raw": "{\n  \"email\": \"test@example.com\",\n  \"password\": \"Password123!\"\n}"}, "url": {"raw": "{{base_gateway}}/api/v1/auth/login", "host": ["{{base_gateway}}"], "path": ["api","v1","auth","login"]}},
+          "response": []
+        },
+        {
+          "name": "Auth Profile (Protected - placeholder)",
+          "request": {"method": "GET", "header": [{"key": "Authorization", "value": "Bearer {{auth_token}}"}], "url": {"raw": "{{base_gateway}}/api/v1/auth/profile", "host": ["{{base_gateway}}"], "path": ["api","v1","auth","profile"]}},
+          "response": []
+        },
+        {
+          "name": "Users Get by identifier",
+          "request": {"method": "GET", "url": {"raw": "{{base_gateway}}/api/v1/users/:identifier", "host": ["{{base_gateway}}"], "path": ["api","v1","users",":identifier"]}},
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "User Service (Direct)",
+      "item": [
+        {"name": "Root", "request": {"method": "GET", "url": {"raw": "{{base_user}}/", "host": ["{{base_user}}"], "path": [""]}}, "response": []},
+        {"name": "Get User by ID", "request": {"method": "GET", "url": {"raw": "{{base_user}}/api/users/by-id/:id", "host": ["{{base_user}}"], "path": ["api","users","by-id",":id"]}}, "response": []},
+        {"name": "Get User by Email", "request": {"method": "GET", "url": {"raw": "{{base_user}}/api/users/by-email?email={{email}}", "host": ["{{base_user}}"], "path": ["api","users","by-email"], "query": [{"key": "email", "value": "{{email}}"}]}}, "response": []},
+        {"name": "Register User", "request": {"method": "POST", "header": [{"key": "Content-Type", "value": "application/json"}], "body": {"mode": "raw", "raw": "{\n  \"email\": \"test@example.com\",\n  \"password\": \"Password123!\",\n  \"first_name\": \"Test\",\n  \"last_name\": \"User\"\n}"}, "url": {"raw": "{{base_user}}/api/v1/auth/register", "host": ["{{base_user}}"], "path": ["api","v1","auth","register"]}}, "response": []},
+        {"name": "Login User", "request": {"method": "POST", "header": [{"key": "Content-Type", "value": "application/json"}], "body": {"mode": "raw", "raw": "{\n  \"email\": \"test@example.com\",\n  \"password\": \"Password123!\"\n}"}, "url": {"raw": "{{base_user}}/api/v1/auth/login", "host": ["{{base_user}}"], "path": ["api","v1","auth","login"]}}, "response": []},
+        {"name": "Admin Me (Protected)", "request": {"method": "GET", "url": {"raw": "{{base_user}}/api/users/admin/me", "host": ["{{base_user}}"], "path": ["api","users","admin","me"]}}, "response": []}
+      ]
+    },
+    {
+      "name": "Product Service",
+      "item": [
+        {"name": "Root Health", "request": {"method": "GET", "url": {"raw": "{{base_product}}/", "host": ["{{base_product}}"], "path": [""]}}, "response": []}
+      ]
+    }
+  ],
+  "variable": [
+    {"key": "base_gateway", "value": "http://localhost:8081"},
+    {"key": "base_user", "value": "http://localhost:8084"},
+    {"key": "base_product", "value": "http://localhost:8082"},
+    {"key": "email", "value": "test@example.com"},
+    {"key": "auth_token", "value": ""}
+  ]
+}

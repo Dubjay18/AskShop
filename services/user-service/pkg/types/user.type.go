@@ -6,7 +6,7 @@ type UserRegistrationRequest struct {
 	FirstName string `json:"firstName"`
 	LastName  string `json:"lastName"`
 	Email     string `json:"email"`
-	Password  string `json:"-"` // Password is never returned in JSON
+	Password  string `json:"password"` // Allow password in JSON for registration
 	Age       int64  `json:"age"`
 }
 

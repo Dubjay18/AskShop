@@ -2,13 +2,16 @@ package rest
 
 import (
 	"askshop/services/cart-service/internal/domain"
+	productclient "askshop/services/cart-service/internal/infrastructure/grpc"
 	"askshop/shared/contracts"
 	"askshop/shared/response"
 	"errors"
 	"net/http"
+	"os"
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 	"gorm.io/gorm"
 )
 
@@ -64,6 +67,33 @@ func (h *CartHandler) GetCart(ctx *gin.Context) {
 	response.Success(ctx, http.StatusOK, cartResp, nil, "")
 }
 
-// func (h *CartHandler) AddItemToCart(ctx *gin.Context) {
+func (h *CartHandler) AddItemToCart(ctx *gin.Context) {
+	userID := ctx.GetString("userId")
+	itemID := ctx.Param("itemId")
+	var req domain.AddItemRequest
+	if err := ctx.ShouldBindJSON(&req); err != nil {
+		response.Error(ctx, http.StatusBadRequest, "", "Invalid request body", err.Error())
+		return
+	}
 
-// }
+	// Try to fetch SKU via product service gRPC; fall back to deterministic SKU.
+	productUUID := uuid.MustParse(itemID)
+	sku := "SKU-" + productUUID.String()[:8]
+	if addr := os.Getenv("PRODUCT_SERVICE_GRPC_ADDR"); addr != "" {
+		cli := productclient.NewGRPCClient(addr)
+		if fetched, err := cli.GetProductSKU(ctx, productUUID.String()); err == nil && fetched != "" {
+			sku = fetched
+		}
+	}
+	item := &domain.CartItem{
+		ProductID:  productUUID,
+		ProductSKU: sku,
+	}
+	cartResp, err := h.cartService.AddItemToCart(ctx, userID, item)
+	if err != nil {
+		status, code, msg, details := mapDomainError(err)
+		response.Error(ctx, status, code, msg, details)
+		return
+	}
+	response.Success(ctx, http.StatusOK, cartResp, nil, "Item added to cart")
+}

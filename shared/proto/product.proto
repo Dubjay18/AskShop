@@ -1,0 +1,130 @@
+syntax = "proto3";
+
+package product;
+
+option go_package = "services/product-service/internal/infrastructure/grpc/product_proto;proto";
+
+import "google/protobuf/timestamp.proto";
+
+// Product represents a merchandise item in the catalog
+message Product {
+    string id = 1;                      // UUID
+    string name = 2;                    // Product name
+    string slug = 3;                    // URL-friendly identifier
+    string sku = 4;                     // Stock Keeping Unit
+    string description = 5;             // Detailed description
+    string currency = 6;                // 3-letter currency code (USD, EUR, etc)
+    string status = 7;                  // Product status: draft, active, archived
+    repeated string tags = 8;           // Array of string tags
+    repeated ProductImage images = 9;   // Product images
+    repeated Category categories = 10;  // Associated categories
+    
+    // Timestamps for record-keeping
+    google.protobuf.Timestamp created_at = 11;
+    google.protobuf.Timestamp updated_at = 12;
+    google.protobuf.Timestamp deleted_at = 13;  // Null if not deleted
+}
+
+// ProductImage represents an image with metadata attached to a product
+message ProductImage {
+    string id = 1;                      // UUID
+    string product_id = 2;              // Reference to parent product
+    string url = 3;                     // Image URL or path
+    string alt = 4;                     // Alt text for accessibility
+    int32 position = 5;                 // Display order position
+    bool is_primary = 6;                // Whether this is the main product image
+    
+    // Timestamps
+    google.protobuf.Timestamp created_at = 7;
+    google.protobuf.Timestamp updated_at = 8;
+}
+
+// Category represents a product classification
+message Category {
+    string id = 1;                      // UUID
+    string name = 2;                    // Category name
+    string slug = 3;                    // URL-friendly identifier
+    string parent_id = 4;               // Optional parent category ID
+    int32 position = 5;                 // Display order position
+    
+    // Timestamps
+    google.protobuf.Timestamp created_at = 6;
+    google.protobuf.Timestamp updated_at = 7;
+    google.protobuf.Timestamp deleted_at = 8;  // Null if not deleted
+}
+
+// ProductList response for listing products
+message ProductList {
+    repeated Product products = 1;
+    int32 total_count = 2;
+    int32 page = 3;
+    int32 page_size = 4;
+}
+
+// ProductRequest to get a specific product
+message ProductRequest {
+    oneof identifier {
+        string id = 1;                  // Get by ID
+        string slug = 2;                // Get by slug
+        string sku = 3;                 // Get by SKU
+    }
+}
+
+// ProductCreateRequest for creating a new product
+message ProductCreateRequest {
+    string name = 1;
+    string slug = 2;                    // Optional, can be auto-generated
+    string sku = 3;
+    string description = 4;
+    string currency = 5;                // Default: USD
+    string status = 6;                  // Default: draft
+    repeated string tags = 7;
+    repeated ProductImage images = 8;   // Optional at creation
+    repeated string category_ids = 9;   // Category IDs to associate
+}
+
+// ProductUpdateRequest for updating an existing product
+message ProductUpdateRequest {
+    string id = 1;                      // Required
+    string name = 2;
+    string slug = 3;
+    string sku = 4;
+    string description = 5;
+    string currency = 6;
+    string status = 7;
+    repeated string tags = 8;
+    repeated string category_ids = 9;   // Category IDs to associate
+    
+    // Fields mask for partial updates
+    repeated string fields = 10;        // List of fields to update
+}
+
+// Service definition
+service ProductService {
+    // Product CRUD operations
+    rpc GetProduct(ProductRequest) returns (Product);
+    rpc ListProducts(ListProductsRequest) returns (ProductList);
+    rpc CreateProduct(ProductCreateRequest) returns (Product);
+    rpc UpdateProduct(ProductUpdateRequest) returns (Product);
+    rpc DeleteProduct(ProductRequest) returns (DeleteResponse);
+    
+    // Category operations could be added here or in a separate service
+}
+
+// ListProductsRequest for filtering and pagination
+message ListProductsRequest {
+    int32 page = 1;                     // 1-based page number
+    int32 page_size = 2;                // Items per page
+    string category_id = 3;             // Optional filter by category
+    repeated string tags = 4;           // Optional filter by tags
+    string status = 5;                  // Optional filter by status
+    string query = 6;                   // Search query
+    string sort_by = 7;                 // Field to sort by
+    bool sort_desc = 8;                 // Sort direction
+}
+
+// DeleteResponse after deleting a product
+message DeleteResponse {
+    bool success = 1;
+    string message = 2;
+}

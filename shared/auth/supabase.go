@@ -1,10 +1,8 @@
 package auth
 
 import (
-	"encoding/json"
 	"net/http"
 	"strings"
-	"time"
 
 	"askshop/shared/response"
 
@@ -44,40 +42,30 @@ func SupabaseAuthMiddleware(supabaseURL, supabaseKey string) gin.HandlerFunc {
 			return
 		}
 
-		// Build request to Supabase user endpoint
-		endpoint := strings.TrimRight(supabaseURL, "/") + "/auth/v1/user"
-		req, err := http.NewRequest("GET", endpoint, nil)
+		// Use our Supabase client to verify the token
+		supaClient := NewSupabaseClient()
+		if !supaClient.IsAvailable() {
+			response.Error(c, http.StatusInternalServerError, "AUTH_CONFIG_MISSING", "Supabase client initialization failed", nil)
+			c.Abort()
+			return
+		}
+
+		userInfo, err := supaClient.VerifyToken(parts[1])
 		if err != nil {
-			response.Error(c, http.StatusInternalServerError, "AUTH_REQUEST_FAILED", "failed to build validation request", err.Error())
-			c.Abort()
-			return
-		}
-		// Forward the bearer token and include apikey header required by Supabase
-		req.Header.Set("Authorization", "Bearer "+parts[1])
-		req.Header.Set("apikey", supabaseKey)
-		req.Header.Set("Accept", "application/json")
-
-		client := &http.Client{Timeout: 5 * time.Second}
-		resp, err := client.Do(req)
-		if err != nil {
-			response.Error(c, http.StatusUnauthorized, "AUTH_INVALID_TOKEN", "failed to validate token with supabase", err.Error())
-			c.Abort()
-			return
-		}
-		defer resp.Body.Close()
-
-		if resp.StatusCode != http.StatusOK {
-			// Try to surface a useful message, but don't leak provider internals
-			response.Error(c, http.StatusUnauthorized, "AUTH_INVALID_TOKEN", "invalid or expired token", nil)
+			response.Error(c, http.StatusUnauthorized, "AUTH_INVALID_TOKEN", "Invalid or expired token", err.Error())
 			c.Abort()
 			return
 		}
 
-		var su supabaseUser
-		if err := json.NewDecoder(resp.Body).Decode(&su); err != nil {
-			response.Error(c, http.StatusInternalServerError, "AUTH_PARSE_FAILED", "failed to parse supabase response", err.Error())
-			c.Abort()
-			return
+		// Convert to our supabaseUser type for consistency
+		su := supabaseUser{
+			ID:    userInfo["id"].(string),
+			Email: userInfo["email"].(string),
+		}
+
+		// Extract user_metadata if available
+		if metadata, ok := userInfo["metadata"].(map[string]interface{}); ok {
+			su.UserMetadata = metadata
 		}
 
 		// Map supabase user to local Claims shape

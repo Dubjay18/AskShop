@@ -9,7 +9,7 @@ import (
 	"askshop/shared/contracts"
 	"askshop/shared/db"
 	"askshop/shared/env"
-	"log"
+	"askshop/shared/logger"
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
@@ -20,7 +20,9 @@ var (
 )
 
 func main() {
-	log.Println("Starting User Service")
+	// Initialize logger
+	appLogger := logger.Default("user-service")
+	appLogger.Info("Starting User Service")
 
 	// Set Gin mode based on environment
 	if env.GetString("ENV", "development") == "production" {
@@ -33,15 +35,16 @@ func main() {
 		return db.AutoMigrate(&domain.UserModel{})
 	}))
 	if err != nil {
-		log.Printf("DB connection failed: %v", err)
+		appLogger.Errorf("DB connection failed: %v", err)
 	}
 
 	// Initialize repository
 	var userRepo domain.UserRepository
 	if err == nil {
 		userRepo = repository.NewUserRepository(dbConn)
+		appLogger.Info("Database connection established")
 	} else {
-		log.Println("Running without database connection")
+		appLogger.Warn("Running without database connection")
 	}
 
 	// Initialize service (only if we have a repository)
@@ -52,8 +55,12 @@ func main() {
 		userHandler = http.NewUserHandler(userService)
 	}
 
-	// Create Gin router
-	router := gin.Default()
+	// Create Gin router with logger middleware instead of default
+	router := gin.New()
+	router.Use(gin.Recovery())
+	router.Use(logger.Middleware("user-service"))
+
+	appLogger.Info("Configured logger middleware")
 
 	// Add CORS middleware
 	router.Use(func(c *gin.Context) {
@@ -119,8 +126,8 @@ func main() {
 	})
 
 	// Start the server
-	log.Printf("User Service listening on %s", httpAddr)
+	appLogger.Infof("User Service listening on %s", httpAddr)
 	if err := router.Run(httpAddr); err != nil {
-		log.Printf("HTTP server error %v", err)
+		appLogger.Errorf("HTTP server error %v", err)
 	}
 }

@@ -30,6 +30,19 @@ type UserRegistrationRequest struct {
 	Age       int    `json:"age,omitempty" binding:"omitempty,gte=0,lte=130"`
 }
 
+// UserLoginRequest forwarded to user service
+type UserLoginRequest struct {
+	Email    string `json:"email" binding:"required,email"`
+	Password string `json:"password" binding:"required"`
+}
+
+// AuthResponse represents the response from user service on successful login/registration
+type AuthResponse struct {
+	User         User   `json:"user"`
+	AccessToken  string `json:"accessToken"`
+	RefreshToken string `json:"refreshToken,omitempty"`
+}
+
 // Product represents a product in the system
 type Product struct {
 	ID          int64   `json:"id"`

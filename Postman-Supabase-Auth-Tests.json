@@ -1,0 +1,126 @@
+{
+  "info": {
+    "name": "Login Tests Script - Supabase Integration",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "description": "Add this script to the Tests tab of your login request"
+  },
+  "item": [
+    {
+      "name": "Example: Tests script for login endpoint",
+      "request": {
+        "method": "POST",
+        "url": "{{base_url}}/api/v1/auth/login",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"email\": \"{{email}}\",\n  \"password\": \"{{password}}\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "// --- Token Extraction for Supabase Integration ---",
+              "",
+              "// Helper: safe getter for nested properties",
+              "function deepGet(obj, pathArr) {",
+              "    return pathArr.reduce((acc, key) => (acc && acc[key] !== undefined ? acc[key] : undefined), obj);",
+              "}",
+              "",
+              "// Parse response JSON (safely)",
+              "let raw;",
+              "try {",
+              "    raw = pm.response.json();",
+              "} catch (e) {",
+              "    console.warn(\"Response is not JSON:\", e);",
+              "    pm.test(\"Response should be valid JSON\", function() {",
+              "        pm.expect.fail(\"Invalid JSON response\");",
+              "    });",
+              "    return;",
+              "}",
+              "",
+              "// Log response structure for debugging",
+              "console.log(\"Response structure keys:\", Object.keys(raw));",
+              "",
+              "// Potential token locations in Supabase & custom format responses",
+              "const candidatePaths = [",
+              "    // Supabase SDK format",
+              "    [\"data\", \"access_token\"],",
+              "    // Our API response format with Supabase token",
+              "    [\"data\", \"accessToken\"],", 
+              "    // Legacy format",
+              "    [\"data\", \"token\"],",
+              "    // Supabase raw format",
+              "    [\"access_token\"],",
+              "    // Other possible locations",
+              "    [\"token\"],",
+              "    [\"accessToken\"],",
+              "    [\"data\", \"auth\", \"token\"],",
+              "    [\"data\", \"session\", \"access_token\"]",
+              "];",
+              "",
+              "let foundToken;",
+              "for (const path of candidatePaths) {",
+              "    const val = deepGet(raw, path);",
+              "    if (typeof val === \"string\" && val.length > 10) { // basic sanity check",
+              "        foundToken = val;",
+              "        console.log(\"Token found at path:\", path.join(\".\"));",
+              "        break;",
+              "    }",
+              "}",
+              "",
+              "if (!foundToken) {",
+              "    console.error(\"No token field found in response\");",
+              "    pm.test(\"Login should return a token\", function () {",
+              "        pm.expect.fail(\"Token not found in expected locations\");",
+              "    });",
+              "} else {",
+              "    // Set token in environment variables",
+              "    pm.environment.set(\"API_TOKEN\", foundToken);",
+              "    pm.environment.set(\"auth_token\", foundToken); // for backward compatibility",
+              "    console.log(\"API_TOKEN set successfully\");",
+              "    ",
+              "    pm.test(\"Token extracted and stored\", function () {",
+              "        pm.expect(foundToken).to.be.a(\"string\");",
+              "    });",
+              "}",
+              "",
+              "// Extract refresh token if present (for Supabase sessions)",
+              "const refreshToken = deepGet(raw, [\"data\", \"refresh_token\"]) || deepGet(raw, [\"refresh_token\"]);",
+              "if (refreshToken && typeof refreshToken === \"string\") {",
+              "    pm.environment.set(\"REFRESH_TOKEN\", refreshToken);",
+              "    console.log(\"REFRESH_TOKEN set successfully\");",
+              "}",
+              "",
+              "// Store user object if present",
+              "const userObj = deepGet(raw, [\"data\", \"user\"]) || deepGet(raw, [\"user\"]);",
+              "if (userObj) {",
+              "    pm.environment.set(\"CURRENT_USER\", JSON.stringify(userObj));",
+              "    console.log(\"User data stored in CURRENT_USER\");",
+              "}",
+              "",
+              "// Basic status test",
+              "pm.test(\"Status code is 200/201\", function () {",
+              "    pm.expect(pm.response.code).to.be.oneOf([200, 201]);",
+              "});",
+              "",
+              "// Validate response structure",
+              "pm.test(\"Response has expected structure\", function () {",
+              "    pm.expect(raw).to.be.an(\"object\");",
+              "    if (raw.data) {",
+              "        pm.expect(raw.data).to.be.an(\"object\");",
+              "    }",
+              "});"
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}

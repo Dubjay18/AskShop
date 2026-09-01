@@ -174,11 +174,16 @@ The product service includes a gRPC definition under `shared/proto/product.proto
 4. When adding a service, prefer `tools/create_service.go -name <service>` to inherit the standard layout and README template.
 
 ## Roadmap & Known Gaps
-- Product service needs a persistent repository implementation and HTTP/REST surface.
-- Cart, order, auth, and AI services are placeholders awaiting domain logic.
+- Product service has working domain/service logic but still needs a persistent (Postgres)
+  repository implementation and a real HTTP/REST surface — both are stubbed today.
+- Cart service has real domain/service/repository logic but hardcodes product price/name
+  instead of calling product-service; order, auth, and AI services are still empty placeholders
+  awaiting domain logic.
 - RabbitMQ integration (declared in `shared/contracts/amqp.go`) is not wired yet.
 - Tilt pipeline currently builds Linux/amd64 binaries; adjust if your target architecture differs.
-- Additional automated tests (integration + contract tests) are being curated.
+- Additional automated tests (integration + contract tests) are being curated. A GitHub Actions
+  CI workflow (`.github/workflows/ci.yml`) now runs `gofmt`, `go vet`, `go build`, and `go test`
+  on every push/PR to `main`.
 
 ## Support & Questions
 Open an issue or leave notes in the relevant service README. When investigating Supabase connectivity, start with `scripts/diagnose-supabase.sh` and ensure your `.env` matches the latest Supabase dashboard credentials.

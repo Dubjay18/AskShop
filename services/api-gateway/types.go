@@ -43,11 +43,16 @@ type AuthResponse struct {
 	RefreshToken string `json:"refreshToken,omitempty"`
 }
 
-// Product represents a product in the system
+// Product represents a product returned from product-service
 type Product struct {
-	ID          int64   `json:"id"`
-	Name        string  `json:"name"`
-	Description string  `json:"description"`
-	Price       float64 `json:"price"`
-	ImageURL    string  `json:"image_url"`
+	ID            string   `json:"id"`
+	Name          string   `json:"name"`
+	Slug          string   `json:"slug"`
+	SKU           string   `json:"sku"`
+	Description   string   `json:"description"`
+	Currency      string   `json:"currency"`
+	Status        string   `json:"status"`
+	Tags          []string `json:"tags"`
+	PriceCents    int64    `json:"priceCents"`
+	StockQuantity int      `json:"stockQuantity"`
 }

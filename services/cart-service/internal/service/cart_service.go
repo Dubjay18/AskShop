@@ -2,6 +2,7 @@ package service
 
 import (
 	"askshop/services/cart-service/internal/domain"
+	productclient "askshop/services/cart-service/internal/infrastructure/grpc"
 	"fmt"
 	"log"
 	"time"
@@ -13,17 +14,19 @@ import (
 
 // CartServiceImpl implements the CartService interface
 type CartServiceImpl struct {
-	repo    domain.CartRepository
-	manager *domain.CartManager
-	config  domain.CartConfig
+	repo          domain.CartRepository
+	manager       *domain.CartManager
+	config        domain.CartConfig
+	productClient productclient.Client
 }
 
 // NewCartService creates a new cart service
-func NewCartService(repo domain.CartRepository, config domain.CartConfig) domain.CartService {
+func NewCartService(repo domain.CartRepository, config domain.CartConfig, productClient productclient.Client) domain.CartService {
 	return &CartServiceImpl{
-		repo:    repo,
-		manager: domain.NewCartManager(config),
-		config:  config,
+		repo:          repo,
+		manager:       domain.NewCartManager(config),
+		config:        config,
+		productClient: productClient,
 	}
 }
 
@@ -105,16 +108,24 @@ func (s *CartServiceImpl) AddItem(ctx *gin.Context, userID string, productID uui
 		return nil, err
 	}
 
-	// TODO: Get product details from product service
-	// For now, we'll use placeholder data
-	productName := fmt.Sprintf("Product %s", productID.String()[:8])
-	productSKU := fmt.Sprintf("SKU-%s", productID.String()[:8])
-	unitPrice := 29.99 // This should come from product service
+	// Fetch authoritative product details (name, SKU, price, availability) from product-service.
+	info, err := s.productClient.GetProduct(ctx, productID.String())
+	if err != nil {
+		if info == nil {
+			return nil, fmt.Errorf("failed to look up product: %w", err)
+		}
+		// Product exists but isn't sellable (e.g. draft/archived).
+		return nil, fmt.Errorf("%w: %s", productclient.ErrProductUnavailable, info.Name)
+	}
+	if int(quantity) > int(info.StockQuantity) {
+		return nil, fmt.Errorf("%w: only %d units of %s in stock", domain.ErrInsufficientStock, info.StockQuantity, info.Name)
+	}
+	unitPrice := float64(info.PriceCents) / 100.0
 
 	// Build cart item
 	builder := domain.NewCartItemBuilder(s.config)
 	item, err := builder.
-		WithProduct(productID, productSKU, productName, unitPrice).
+		WithProduct(productID, info.SKU, info.Name, unitPrice).
 		WithQuantity(quantity).
 		WithVariations(variations).
 		Build()
@@ -361,8 +372,40 @@ func (s *CartServiceImpl) ValidateCartForCheckout(ctx *gin.Context, userID strin
 		return result, nil
 	}
 
-	// TODO: Validate product availability and prices
-	// This would involve calling the product service to check current prices and stock
+	// Validate product availability and prices against product-service.
+	for _, item := range cart.Items {
+		info, err := s.productClient.GetProduct(ctx, item.ProductID.String())
+		if err != nil {
+			if info == nil {
+				result.IsValid = false
+				result.Errors = append(result.Errors, fmt.Sprintf("failed to look up product %s: %v", item.ProductName, err))
+				continue
+			}
+			result.IsValid = false
+			result.UnavailableItems = append(result.UnavailableItems, item.ProductID)
+			result.Errors = append(result.Errors, fmt.Sprintf("%s is no longer available", item.ProductName))
+			continue
+		}
+
+		currentPrice := float64(info.PriceCents) / 100.0
+		if currentPrice != item.UnitPrice {
+			result.Warnings = append(result.Warnings, fmt.Sprintf("price for %s changed from %.2f to %.2f", item.ProductName, item.UnitPrice, currentPrice))
+			result.PriceChanges = append(result.PriceChanges, domain.CartItemPriceChange{
+				ItemID:      item.ID,
+				ProductID:   item.ProductID,
+				ProductName: item.ProductName,
+				OldPrice:    item.UnitPrice,
+				NewPrice:    currentPrice,
+				Difference:  currentPrice - item.UnitPrice,
+			})
+		}
+
+		if item.Quantity > int(info.StockQuantity) {
+			result.IsValid = false
+			result.UnavailableItems = append(result.UnavailableItems, item.ProductID)
+			result.Errors = append(result.Errors, fmt.Sprintf("only %d units of %s in stock", info.StockQuantity, item.ProductName))
+		}
+	}
 
 	return result, nil
 }

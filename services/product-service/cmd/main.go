@@ -3,6 +3,7 @@ package main
 import (
 	"askshop/services/product-service/internal/domain"
 	grpc_server "askshop/services/product-service/internal/infrastructure/grpc"
+	producthttp "askshop/services/product-service/internal/infrastructure/http"
 	"askshop/services/product-service/internal/infrastructure/repository"
 	"askshop/services/product-service/internal/service"
 	"askshop/shared/db"
@@ -28,51 +29,42 @@ func main() {
 
 	// Initialize repository: connect DB and prepare migrations
 	cfg := db.LoadConfigFromEnv()
-	_, err := db.Connect(cfg, db.WithAutoMigrations(func(db *gorm.DB) error {
+	gdb, err := db.Connect(cfg, db.WithAutoMigrations(func(db *gorm.DB) error {
 		return db.AutoMigrate(
 			&domain.Product{},
 			&domain.ProductImage{},
 			&domain.Category{},
 		)
 	}))
-	if err != nil {
-		log.Printf("DB connection failed: %v", err)
-	}
 
-	// Set up repository (in-memory until DB repo is implemented)
-	var productRepo repository.ProductRepository = repository.NewInMemoryProductRepository()
+	var productRepo repository.ProductRepository
 	if err != nil {
-		log.Println("Running with in-memory repository (DB unavailable)")
+		log.Printf("DB connection failed, falling back to in-memory repository: %v", err)
+		productRepo = repository.NewInMemoryProductRepository()
 	} else {
-		log.Println("DB connected; using in-memory repository until PG repo is added")
+		log.Println("DB connected; using Postgres repository")
+		productRepo = repository.NewPGProductRepository(gdb)
 	}
 
 	// Initialize service
 	productService := service.NewProductService(productRepo)
 
-	// TODO Initialize gRPC server
+	// gRPC server (for service-to-service calls, e.g. cart/order pricing lookups)
 	grpcAddr := env.GetString("PRODUCT_SERVICE_GRPC_ADDR", ":9090")
 	// If env contains a host like "product-service:9090", bind to local port only
-	if strings.HasPrefix(grpcAddr, ":") == false {
+	if !strings.HasPrefix(grpcAddr, ":") {
 		if idx := strings.LastIndex(grpcAddr, ":"); idx != -1 && idx+1 < len(grpcAddr) {
 			grpcAddr = ":" + grpcAddr[idx+1:]
 		}
 	}
 	grpcSrv := grpc_server.NewGRPCServer(grpcAddr, productService)
 	go grpcSrv.Start()
-	// TODO Initialize HTTP handler
 
-	// TODO Create Gin router
-
-	//TODO  Add CORS middleware
-
-	// TODO Register routes
-
-	// TODO Add a root route
-
-	// Start a minimal HTTP server to keep the process alive
+	// HTTP server
 	r := gin.Default()
 	r.GET("/", func(c *gin.Context) { c.JSON(200, gin.H{"service": "product", "status": "ok"}) })
+	producthttp.NewProductHandler(productService).RegisterRoutes(r)
+
 	if err := r.Run(httpAddr); err != nil {
 		log.Fatal(err)
 	}

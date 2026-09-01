@@ -8,6 +8,7 @@ require (
 	github.com/golang-jwt/jwt/v4 v4.5.2
 	github.com/google/uuid v1.6.0
 	github.com/joho/godotenv v1.5.1
+	github.com/rabbitmq/amqp091-go v1.14.0
 	github.com/supabase-community/auth-go v1.4.0
 	golang.org/x/crypto v0.41.0
 	google.golang.org/grpc v1.75.0

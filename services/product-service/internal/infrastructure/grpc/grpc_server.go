@@ -42,16 +42,18 @@ func toProtoProduct(p *domain.Product) *proto.Product {
 		return nil
 	}
 	out := &proto.Product{
-		Id:          p.ID.String(),
-		Name:        p.Name,
-		Slug:        p.Slug,
-		Sku:         p.SKU,
-		Description: p.Description,
-		Currency:    p.Currency,
-		Status:      p.Status,
-		Tags:        append([]string(nil), p.Tags...),
-		CreatedAt:   timestamppb.New(p.CreatedAt),
-		UpdatedAt:   timestamppb.New(p.UpdatedAt),
+		Id:            p.ID.String(),
+		Name:          p.Name,
+		Slug:          p.Slug,
+		Sku:           p.SKU,
+		Description:   p.Description,
+		Currency:      p.Currency,
+		Status:        p.Status,
+		Tags:          append([]string(nil), p.Tags...),
+		PriceCents:    p.PriceCents,
+		StockQuantity: int32(p.StockQuantity),
+		CreatedAt:     timestamppb.New(p.CreatedAt),
+		UpdatedAt:     timestamppb.New(p.UpdatedAt),
 	}
 	// Images and Categories omitted for brevity
 	return out

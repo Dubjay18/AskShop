@@ -66,11 +66,17 @@ All services load configuration from environment variables (with `.env` support 
 ENV=development
 HTTP_ADDR=:8084
 USER_SERVICE_URL=http://localhost:8084
+PRODUCT_SERVICE_URL=http://localhost:8082
+CART_SERVICE_URL=http://localhost:8083
+ORDER_SERVICE_URL=http://localhost:8085
 PRODUCT_SERVICE_GRPC_ADDR=product-service:9090
 CART_SERVICE_GRPC_ADDR=cart-service:9091
 ORDER_SERVICE_GRPC_ADDR=order-service:9092
 PAYMENT_SERVICE_GRPC_ADDR=payment-service:9093
 AUTH_SERVICE_GRPC_ADDR=auth-service:9094
+
+# RabbitMQ (optional — order-service degrades to log-only if unset/unreachable)
+RABBITMQ_URL=amqp://guest:guest@localhost:5672/
 
 # Database (PostgreSQL)
 DATABASE_URL=postgresql://postgres:postgres@localhost:5432/askshop?sslmode=disable
@@ -113,13 +119,28 @@ kubectl rollout restart deployment user-service
 ### Option 2: Run individual services locally
 The services are standard Go applications. In separate terminals:
 ```bash
-# Start the user service (HTTP :8084)
+# Start Postgres and RabbitMQ (or point DB_HOST/RABBITMQ_URL at existing instances)
+
+# User service (HTTP :8084)
 go run ./services/user-service/cmd/main.go
 
-# Start the API gateway (HTTP :8081)
+# Product service (HTTP :8082, gRPC :9090)
+go run ./services/product-service/cmd
+
+# Cart service (HTTP :8083) — requires product-service's gRPC endpoint
+go run ./services/cart-service/cmd
+
+# Order service (HTTP :8085) — requires cart-service's HTTP endpoint
+go run ./services/order-service/cmd
+
+# API gateway (HTTP :8081) — fronts all of the above
 go run ./services/api-gateway
 ```
-Then exercise endpoints:
+Seed the product catalog for local testing:
+```bash
+go run ./services/product-service/cmd/seed
+```
+Then exercise the full commerce flow through the gateway:
 ```bash
 # Register a user (Supabase-powered)
 curl -X POST http://localhost:8081/api/v1/auth/register \
@@ -130,8 +151,20 @@ curl -X POST http://localhost:8081/api/v1/auth/register \
 curl -X POST http://localhost:8081/api/v1/auth/login \
   -H 'Content-Type: application/json' \
   -d '{"email":"demo@example.com","password":"Demo123!"}'
+
+# Browse products
+curl http://localhost:8081/api/v1/products
+
+# Add an item to cart (X-User-ID stands in for JWT-derived identity until
+# the gateway forwards it automatically)
+curl -X POST http://localhost:8081/api/v1/cart/items \
+  -H 'X-User-ID: demo-user' -H 'Content-Type: application/json' \
+  -d '{"productId":"<product-id-from-above>","quantity":1}'
+
+# Place an order from the cart
+curl -X POST http://localhost:8081/api/v1/orders -H 'X-User-ID: demo-user'
 ```
-Product, cart, order, and AI services currently ship with stub `main` functions and are best driven through Tilt while their implementations are completed.
+Auth and AI services still ship with stub `main` functions.
 
 ## API Surface
 The gateway exposes REST resources under `/api/v1` using the contracts defined in `shared/contracts/routes.go`.
@@ -139,11 +172,17 @@ The gateway exposes REST resources under `/api/v1` using the contracts defined i
 - `POST /api/v1/auth/login` – email/password login (returns Supabase tokens).
 - `GET /api/v1/auth/service-diagnostics` – development-only pass-through to user service diagnostics.
 - `GET /api/v1/users/:id` and `GET /api/v1/users/by-email?email=` – fetch user profiles (served by user-service).
+- `GET /api/v1/products` and `GET /api/v1/products/:id` – browse the catalog (served by product-service).
+- `GET /api/v1/cart`, `POST /api/v1/cart/items`, `PUT|DELETE /api/v1/cart/items/:itemId` – manage the caller's cart (served by cart-service, priced live against product-service).
+- `POST /api/v1/orders`, `GET /api/v1/orders`, `GET /api/v1/orders/:id` – place and read orders (served by order-service; validates and converts the cart, publishes `order.event.placed`).
 
 Use `AskShop.postman_collection.json` with the accompanying environment file to play through end-to-end flows.
 
 ## Database & Migrations
-`shared/db` encapsulates PostgreSQL connectivity via GORM. Each service provides auto-migrations when the database is reachable (for example, `UserModel` in the user service and `Product`, `ProductImage`, `Category` in the product service). If a connection cannot be established (e.g., local development without PostgreSQL), services gracefully fall back to in-memory repositories where available.
+`shared/db` encapsulates PostgreSQL connectivity via GORM. Each service provides auto-migrations when the database is reachable: `UserModel` (user-service), `Product`/`ProductImage`/`Category` (product-service), `Cart`/`CartItem`/`SavedItem` (cart-service), `Order`/`OrderItem` (order-service). product-service falls back to an in-memory repository if Postgres is unreachable; cart-service and order-service require Postgres to start.
+
+## Events (RabbitMQ)
+`shared/events` is a thin publisher/consumer over a single `askshop.events` topic exchange, keyed by the routing keys declared in `shared/contracts/amqp.go`. order-service publishes `order.event.placed` after checkout and runs a demonstration consumer (`order-service.notify-stub`) that logs what it receives — a stand-in for a future dedicated notification service. If `RABBITMQ_URL` is unset or the broker is unreachable, publishing/consuming no-ops with a log line rather than failing service startup.
 
 ## Protobuf & gRPC
 The product service includes a gRPC definition under `shared/proto/product.proto` with generated bindings in the same folder.
@@ -174,16 +213,22 @@ The product service includes a gRPC definition under `shared/proto/product.proto
 4. When adding a service, prefer `tools/create_service.go -name <service>` to inherit the standard layout and README template.
 
 ## Roadmap & Known Gaps
-- Product service has working domain/service logic but still needs a persistent (Postgres)
-  repository implementation and a real HTTP/REST surface — both are stubbed today.
-- Cart service has real domain/service/repository logic but hardcodes product price/name
-  instead of calling product-service; order, auth, and AI services are still empty placeholders
-  awaiting domain logic.
-- RabbitMQ integration (declared in `shared/contracts/amqp.go`) is not wired yet.
+- The core commerce flow now works end to end: browse products → add to cart (priced live from
+  product-service) → checkout → order created → cart converted → `order.event.placed` published
+  and consumed over RabbitMQ. Verified locally against real Postgres and RabbitMQ instances.
+- Product prices are modeled as `priceCents`/`stockQuantity` (integer minor units), not floating
+  currency amounts, to avoid rounding drift; the gRPC contract (`shared/proto/product.proto`) and
+  domain models were extended accordingly.
+- The gateway forwards identity via an `X-User-ID` header for now — there's no JWT verification
+  in the request path yet. Wiring `shared/auth` (or auth-service, still a placeholder) through
+  the gateway is the next auth-hardening step.
+- auth and AI services are still empty placeholders awaiting domain logic. AI-powered features
+  (conversational shopping assistant, semantic search, product Q&A) are next up.
+- cart-service and order-service require a reachable Postgres to start (no in-memory fallback);
+  product-service still degrades to an in-memory repository if Postgres is unreachable.
 - Tilt pipeline currently builds Linux/amd64 binaries; adjust if your target architecture differs.
-- Additional automated tests (integration + contract tests) are being curated. A GitHub Actions
-  CI workflow (`.github/workflows/ci.yml`) now runs `gofmt`, `go vet`, `go build`, and `go test`
-  on every push/PR to `main`.
+- Per-service unit tests are still thin. A GitHub Actions CI workflow (`.github/workflows/ci.yml`)
+  now runs `gofmt`, `go vet`, `go build`, and `go test` on every push/PR to `main`.
 
 ## Support & Questions
 Open an issue or leave notes in the relevant service README. When investigating Supabase connectivity, start with `scripts/diagnose-supabase.sh` and ensure your `.env` matches the latest Supabase dashboard credentials.

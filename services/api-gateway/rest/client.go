@@ -29,6 +29,12 @@ func NewServiceClient(serviceName string) *ServiceClient {
 	switch strings.ToLower(serviceName) {
 	case "user":
 		port = "8084" // user-service default from its main.go
+	case "product":
+		port = "8082" // product-service default from its main.go
+	case "cart":
+		port = "8083" // cart-service default from its main.go
+	case "order":
+		port = "8085" // order-service default from its main.go
 	}
 	def := fmt.Sprintf("http://%s-service:%s", strings.ToLower(serviceName), port)
 	baseURL := env.GetString(key, def)
@@ -90,6 +96,10 @@ func (c *ServiceClient) doRequest(ctx context.Context, method, path string, body
 	// Add authorization header if present in context
 	if authHeader, ok := ctx.Value("authorization").(string); ok && authHeader != "" {
 		req.Header.Set("Authorization", authHeader)
+	}
+	// Forward the caller's user id (until JWT-based identity is wired through the gateway)
+	if userID, ok := ctx.Value("user_id").(string); ok && userID != "" {
+		req.Header.Set("X-User-ID", userID)
 	}
 
 	resp, err := c.httpClient.Do(req)

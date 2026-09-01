@@ -11,14 +11,15 @@ import (
 // Cart business logic and validation
 
 var (
-	ErrCartNotFound    = errors.New("cart not found")
-	ErrItemNotFound    = errors.New("cart item not found")
-	ErrInvalidQuantity = errors.New("invalid quantity")
-	ErrProductNotFound = errors.New("product not found")
-	ErrCartExpired     = errors.New("cart has expired")
-	ErrEmptyCart       = errors.New("cart is empty")
-	ErrItemNotInCart   = errors.New("item not in cart")
-	ErrDuplicateItem   = errors.New("item already exists in cart")
+	ErrCartNotFound      = errors.New("cart not found")
+	ErrItemNotFound      = errors.New("cart item not found")
+	ErrInvalidQuantity   = errors.New("invalid quantity")
+	ErrProductNotFound   = errors.New("product not found")
+	ErrCartExpired       = errors.New("cart has expired")
+	ErrEmptyCart         = errors.New("cart is empty")
+	ErrItemNotInCart     = errors.New("item not in cart")
+	ErrDuplicateItem     = errors.New("item already exists in cart")
+	ErrInsufficientStock = errors.New("insufficient stock")
 )
 
 // CartConfig holds configuration for cart behavior

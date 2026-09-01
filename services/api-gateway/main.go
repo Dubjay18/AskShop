@@ -5,6 +5,7 @@ import (
 	"askshop/shared/contracts"
 	"askshop/shared/env"
 	"askshop/shared/response"
+	"context"
 	"fmt"
 	"net/http"
 	"strings"
@@ -48,9 +49,122 @@ func main() {
 
 	// Service clients
 	userClient := rest.NewServiceClient("user")
+	productClient := rest.NewServiceClient("product")
+	cartClient := rest.NewServiceClient("cart")
+	orderClient := rest.NewServiceClient("order")
 
 	// API v1 group
 	v1 := router.Group(contracts.Routes.APIBase)
+
+	// Products routes (proxied to product-service)
+	products := v1.Group("/products")
+	{
+		products.GET("", func(c *gin.Context) {
+			var raw []map[string]interface{}
+			path := "/api/v1/products"
+			if q := c.Request.URL.RawQuery; q != "" {
+				path += "?" + q
+			}
+			if err := productClient.Get(c.Request.Context(), path, &raw); err != nil {
+				logger.WithField("error", err.Error()).Error("Error fetching products from product service")
+				response.Error(c, http.StatusInternalServerError, contracts.CodeInternalServerError,
+					"Error fetching products", err.Error())
+				return
+			}
+			response.Success(c, http.StatusOK, raw, nil, "")
+		})
+
+		products.GET("/:id", func(c *gin.Context) {
+			id := c.Param("id")
+			var raw map[string]interface{}
+			if err := productClient.Get(c.Request.Context(), "/api/v1/products/"+id, &raw); err != nil {
+				logger.WithField("error", err.Error()).Error("Error fetching product from product service")
+				response.Error(c, http.StatusNotFound, contracts.CodeInternalServerError, "Product not found", err.Error())
+				return
+			}
+			response.Success(c, http.StatusOK, raw, nil, "")
+		})
+	}
+
+	// Cart & order routes (proxied). userCtx forwards the caller's X-User-ID
+	// header to downstream services until JWT-based identity is wired through
+	// the gateway.
+	userCtx := func(c *gin.Context) context.Context {
+		return context.WithValue(c.Request.Context(), "user_id", c.GetHeader("X-User-ID"))
+	}
+
+	cart := v1.Group("/cart")
+	{
+		cart.GET("", func(c *gin.Context) {
+			var raw map[string]interface{}
+			if err := cartClient.Get(userCtx(c), "/api/v1/cart", &raw); err != nil {
+				response.Error(c, http.StatusInternalServerError, contracts.CodeInternalServerError, "Error fetching cart", err.Error())
+				return
+			}
+			response.Success(c, http.StatusOK, raw, nil, "")
+		})
+		cart.POST("/items", func(c *gin.Context) {
+			var body interface{}
+			if err := c.ShouldBindJSON(&body); err != nil {
+				response.Error(c, http.StatusBadRequest, contracts.CodeInvalidRequestBody, "Invalid request body", err.Error())
+				return
+			}
+			var raw map[string]interface{}
+			if err := cartClient.Post(userCtx(c), "/api/v1/cart/items", body, &raw); err != nil {
+				response.Error(c, http.StatusInternalServerError, contracts.CodeInternalServerError, "Error adding item to cart", err.Error())
+				return
+			}
+			response.Success(c, http.StatusOK, raw, nil, "Item added to cart")
+		})
+		cart.PUT("/items/:itemId", func(c *gin.Context) {
+			var body interface{}
+			if err := c.ShouldBindJSON(&body); err != nil {
+				response.Error(c, http.StatusBadRequest, contracts.CodeInvalidRequestBody, "Invalid request body", err.Error())
+				return
+			}
+			var raw map[string]interface{}
+			if err := cartClient.Put(userCtx(c), "/api/v1/cart/items/"+c.Param("itemId"), body, &raw); err != nil {
+				response.Error(c, http.StatusInternalServerError, contracts.CodeInternalServerError, "Error updating cart item", err.Error())
+				return
+			}
+			response.Success(c, http.StatusOK, raw, nil, "Cart item updated")
+		})
+		cart.DELETE("/items/:itemId", func(c *gin.Context) {
+			if err := cartClient.Delete(userCtx(c), "/api/v1/cart/items/"+c.Param("itemId"), nil); err != nil {
+				response.Error(c, http.StatusInternalServerError, contracts.CodeInternalServerError, "Error removing cart item", err.Error())
+				return
+			}
+			response.Success(c, http.StatusOK, nil, nil, "Item removed from cart")
+		})
+	}
+
+	orders := v1.Group("/orders")
+	{
+		orders.POST("", func(c *gin.Context) {
+			var raw map[string]interface{}
+			if err := orderClient.Post(userCtx(c), "/api/v1/orders", nil, &raw); err != nil {
+				response.Error(c, http.StatusInternalServerError, contracts.CodeInternalServerError, "Error placing order", err.Error())
+				return
+			}
+			response.Success(c, http.StatusCreated, raw, nil, "Order placed successfully")
+		})
+		orders.GET("", func(c *gin.Context) {
+			var raw []map[string]interface{}
+			if err := orderClient.Get(userCtx(c), "/api/v1/orders", &raw); err != nil {
+				response.Error(c, http.StatusInternalServerError, contracts.CodeInternalServerError, "Error fetching orders", err.Error())
+				return
+			}
+			response.Success(c, http.StatusOK, raw, nil, "")
+		})
+		orders.GET("/:id", func(c *gin.Context) {
+			var raw map[string]interface{}
+			if err := orderClient.Get(userCtx(c), "/api/v1/orders/"+c.Param("id"), &raw); err != nil {
+				response.Error(c, http.StatusNotFound, contracts.CodeInternalServerError, "Order not found", err.Error())
+				return
+			}
+			response.Success(c, http.StatusOK, raw, nil, "")
+		})
+	}
 
 	// Users routes
 	users := v1.Group("/users")

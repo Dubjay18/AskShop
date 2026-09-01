@@ -34,6 +34,10 @@ type Product struct {
 	Status      string                      `json:"status" gorm:"type:varchar(16);not null;default:draft;check:status IN ('draft','active','archived')"`
 	Tags        datatypes.JSONSlice[string] `json:"tags" gorm:"type:jsonb;default:'[]'"` // e.g., ["new","sale"]
 
+	// Pricing & inventory
+	PriceCents    int64 `json:"priceCents" gorm:"not null;default:0"` // unit price in minor currency units (e.g. cents)
+	StockQuantity int   `json:"stockQuantity" gorm:"not null;default:0"`
+
 	// Associations
 	Images     []ProductImage `json:"images" gorm:"constraint:OnUpdate:CASCADE,OnDelete:CASCADE;"`
 	Categories []Category     `json:"categories" gorm:"many2many:product_categories;constraint:OnUpdate:CASCADE,OnDelete:CASCADE;"`

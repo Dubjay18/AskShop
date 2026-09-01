@@ -18,7 +18,9 @@ message Product {
     repeated string tags = 8;           // Array of string tags
     repeated ProductImage images = 9;   // Product images
     repeated Category categories = 10;  // Associated categories
-    
+    int64 price_cents = 14;             // Unit price in minor currency units (e.g. cents)
+    int32 stock_quantity = 15;          // Units available for sale
+
     // Timestamps for record-keeping
     google.protobuf.Timestamp created_at = 11;
     google.protobuf.Timestamp updated_at = 12;

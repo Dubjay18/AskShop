@@ -24,7 +24,7 @@ func main() {
 
 	llmClient := llm.New()
 	if !llmClient.Available {
-		log.Println("ANTHROPIC_API_KEY not set — AI endpoints will return 503 until it's configured")
+		log.Println("GEMINI_API_KEY not set — AI endpoints will return 503 until it's configured")
 	} else {
 		log.Printf("AI Service using model %s", llmClient.Model)
 	}

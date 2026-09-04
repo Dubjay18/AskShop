@@ -1,6 +1,6 @@
 // Package service implements ai-service's business logic: a conversational
-// shopping assistant grounded in the real product catalog via tool use, plus
-// single-shot product explanations and cart-abandonment nudges.
+// shopping assistant grounded in the real product catalog via function
+// calling, plus single-shot product explanations and cart-abandonment nudges.
 package service
 
 import (
@@ -8,16 +8,15 @@ import (
 	"askshop/services/ai-service/internal/llm"
 	"askshop/services/ai-service/internal/productclient"
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"log"
 	"strings"
 
-	"github.com/anthropics/anthropic-sdk-go"
+	"google.golang.org/genai"
 )
 
-var ErrLLMUnavailable = errors.New("AI features are unavailable: ANTHROPIC_API_KEY is not configured")
+var ErrLLMUnavailable = errors.New("AI features are unavailable: GEMINI_API_KEY is not configured")
 
 const maxToolIterations = 4
 
@@ -44,79 +43,74 @@ func NewAIService(llmClient *llm.Client, productClient *productclient.Client, ca
 }
 
 const chatSystemPrompt = `You are AskShop's shopping assistant. Help customers find products in
-the catalog and answer questions about them. Always use the search_products tool to look up
+the catalog and answer questions about them. Always use the search_products function to look up
 products before recommending or describing anything specific — never invent products, prices,
 or stock levels. If nothing in the catalog matches, say so plainly. Keep replies short (2-4
 sentences) and mention prices in dollars (priceCents / 100), formatted like $19.99.`
 
-var searchProductsTool = anthropic.ToolParam{
+var searchProductsDeclaration = &genai.FunctionDeclaration{
 	Name:        "search_products",
-	Description: anthropic.String("Search the AskShop product catalog by keyword. Returns matching products with id, name, price, and stock."),
-	InputSchema: anthropic.ToolInputSchemaParam{
-		Properties: map[string]any{
-			"query": map[string]any{
-				"type":        "string",
-				"description": "Keywords to search for, e.g. 'wireless headphones'",
+	Description: "Search the AskShop product catalog by keyword. Returns matching products with id, name, price, and stock.",
+	Parameters: &genai.Schema{
+		Type: genai.TypeObject,
+		Properties: map[string]*genai.Schema{
+			"query": {
+				Type:        genai.TypeString,
+				Description: "Keywords to search for, e.g. 'wireless headphones'",
 			},
 		},
 		Required: []string{"query"},
 	},
 }
 
-// Chat answers a user's shopping question, using search_products as a tool
-// so the model can ground its reply in the real catalog.
+// Chat answers a user's shopping question, using search_products as a
+// function so the model can ground its reply in the real catalog.
 func (s *AIService) Chat(ctx context.Context, history []ChatMessage, userMessage string) (*ChatResult, error) {
 	if !s.llm.Available {
 		return nil, ErrLLMUnavailable
 	}
 
-	messages := make([]anthropic.MessageParam, 0, len(history)+1)
+	contents := make([]*genai.Content, 0, len(history)+1)
 	for _, m := range history {
+		role := genai.Role(genai.RoleUser)
 		if m.Role == "assistant" {
-			messages = append(messages, anthropic.NewAssistantMessage(anthropic.NewTextBlock(m.Content)))
-		} else {
-			messages = append(messages, anthropic.NewUserMessage(anthropic.NewTextBlock(m.Content)))
+			role = genai.Role(genai.RoleModel)
 		}
+		contents = append(contents, genai.NewContentFromText(m.Content, role))
 	}
-	messages = append(messages, anthropic.NewUserMessage(anthropic.NewTextBlock(userMessage)))
+	contents = append(contents, genai.NewContentFromText(userMessage, genai.RoleUser))
 
-	tools := []anthropic.ToolUnionParam{{OfTool: &searchProductsTool}}
+	config := &genai.GenerateContentConfig{
+		SystemInstruction: genai.NewContentFromText(chatSystemPrompt, genai.RoleUser),
+		Tools:             []*genai.Tool{{FunctionDeclarations: []*genai.FunctionDeclaration{searchProductsDeclaration}}},
+	}
+
 	referenced := map[string]struct{}{}
+	var reply string
 
-	var finalText strings.Builder
 	for i := 0; i < maxToolIterations; i++ {
-		resp, err := s.llm.SDK.Messages.New(ctx, anthropic.MessageNewParams{
-			Model:     anthropic.Model(s.llm.Model),
-			MaxTokens: 1024,
-			System:    []anthropic.TextBlockParam{{Text: chatSystemPrompt}},
-			Messages:  messages,
-			Tools:     tools,
-		})
+		resp, err := s.llm.SDK.Models.GenerateContent(ctx, s.llm.Model, contents, config)
 		if err != nil {
 			return nil, fmt.Errorf("assistant call failed: %w", err)
 		}
-
-		messages = append(messages, resp.ToParam())
-
-		toolResults := []anthropic.ContentBlockParamUnion{}
-		for _, block := range resp.Content {
-			switch variant := block.AsAny().(type) {
-			case anthropic.TextBlock:
-				finalText.WriteString(variant.Text)
-			case anthropic.ToolUseBlock:
-				result, skus := s.runTool(ctx, variant.Name, variant.JSON.Input.Raw())
-				for _, sku := range skus {
-					referenced[sku] = struct{}{}
-				}
-				toolResults = append(toolResults, anthropic.NewToolResultBlock(variant.ID, result, false))
-			}
-		}
-
-		if resp.StopReason != anthropic.StopReasonToolUse {
+		if len(resp.Candidates) == 0 || resp.Candidates[0].Content == nil {
 			break
 		}
-		messages = append(messages, anthropic.NewUserMessage(toolResults...))
-		finalText.Reset() // only the post-tool-use reply matters
+		contents = append(contents, resp.Candidates[0].Content)
+
+		calls := resp.FunctionCalls()
+		if len(calls) == 0 {
+			reply = resp.Text()
+			break
+		}
+
+		for _, call := range calls {
+			result, skus := s.runTool(ctx, call.Name, call.Args)
+			for _, sku := range skus {
+				referenced[sku] = struct{}{}
+			}
+			contents = append(contents, genai.NewContentFromFunctionResponse(call.Name, map[string]any{"output": result}, genai.RoleUser))
+		}
 	}
 
 	skus := make([]string, 0, len(referenced))
@@ -124,25 +118,20 @@ func (s *AIService) Chat(ctx context.Context, history []ChatMessage, userMessage
 		skus = append(skus, sku)
 	}
 
-	reply := strings.TrimSpace(finalText.String())
+	reply = strings.TrimSpace(reply)
 	if reply == "" {
 		reply = "I couldn't find anything matching that in our catalog right now."
 	}
 	return &ChatResult{Reply: reply, ReferencedSKUs: skus}, nil
 }
 
-// runTool executes a tool call by name and returns its result text plus any
-// product SKUs it surfaced (for the caller to track what was referenced).
-func (s *AIService) runTool(ctx context.Context, name, rawInput string) (string, []string) {
+// runTool executes a function call by name and returns its result text plus
+// any product SKUs it surfaced (for the caller to track what was referenced).
+func (s *AIService) runTool(ctx context.Context, name string, args map[string]any) (string, []string) {
 	switch name {
 	case "search_products":
-		var in struct {
-			Query string `json:"query"`
-		}
-		if err := json.Unmarshal([]byte(rawInput), &in); err != nil {
-			return fmt.Sprintf("invalid tool input: %v", err), nil
-		}
-		products, err := s.product.Search(ctx, in.Query, 5)
+		query, _ := args["query"].(string)
+		products, err := s.product.Search(ctx, query, 5)
 		if err != nil {
 			log.Printf("ai-service: search_products failed: %v", err)
 			return fmt.Sprintf("search failed: %v", err), nil
@@ -160,7 +149,7 @@ func (s *AIService) runTool(ctx context.Context, name, rawInput string) (string,
 		}
 		return sb.String(), skus
 	default:
-		return fmt.Sprintf("unknown tool: %s", name), nil
+		return fmt.Sprintf("unknown function: %s", name), nil
 	}
 }
 
@@ -181,22 +170,11 @@ func (s *AIService) ExplainProduct(ctx context.Context, productID string) (strin
 		p.Name, p.SKU, p.Description, float64(p.PriceCents)/100.0, p.StockQuantity, p.Status, strings.Join(p.Tags, ", "),
 	)
 
-	resp, err := s.llm.SDK.Messages.New(ctx, anthropic.MessageNewParams{
-		Model:     anthropic.Model(s.llm.Model),
-		MaxTokens: 512,
-		Messages:  []anthropic.MessageParam{anthropic.NewUserMessage(anthropic.NewTextBlock(prompt))},
-	})
+	resp, err := s.llm.SDK.Models.GenerateContent(ctx, s.llm.Model, genai.Text(prompt), nil)
 	if err != nil {
 		return "", fmt.Errorf("assistant call failed: %w", err)
 	}
-
-	var sb strings.Builder
-	for _, block := range resp.Content {
-		if variant, ok := block.AsAny().(anthropic.TextBlock); ok {
-			sb.WriteString(variant.Text)
-		}
-	}
-	return strings.TrimSpace(sb.String()), nil
+	return strings.TrimSpace(resp.Text()), nil
 }
 
 type CartNudge struct {
@@ -232,23 +210,13 @@ func (s *AIService) GenerateAbandonedCartNudges(ctx context.Context, sinceMinute
 			"Write a short (1-2 sentence), friendly cart-abandonment reminder for a shopper who left "+
 				"these items in their cart:\n%s\nDo not invent a discount or promotion.", items.String())
 
-		resp, err := s.llm.SDK.Messages.New(ctx, anthropic.MessageNewParams{
-			Model:     anthropic.Model(s.llm.Model),
-			MaxTokens: 256,
-			Messages:  []anthropic.MessageParam{anthropic.NewUserMessage(anthropic.NewTextBlock(prompt))},
-		})
+		resp, err := s.llm.SDK.Models.GenerateContent(ctx, s.llm.Model, genai.Text(prompt), nil)
 		if err != nil {
 			log.Printf("ai-service: nudge generation failed for cart %s: %v", c.ID, err)
 			continue
 		}
 
-		var sb strings.Builder
-		for _, block := range resp.Content {
-			if variant, ok := block.AsAny().(anthropic.TextBlock); ok {
-				sb.WriteString(variant.Text)
-			}
-		}
-		nudges = append(nudges, CartNudge{UserID: c.UserID, CartID: c.ID, Message: strings.TrimSpace(sb.String())})
+		nudges = append(nudges, CartNudge{UserID: c.UserID, CartID: c.ID, Message: strings.TrimSpace(resp.Text())})
 	}
 
 	return nudges, nil

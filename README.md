@@ -79,8 +79,8 @@ AUTH_SERVICE_GRPC_ADDR=auth-service:9094
 RABBITMQ_URL=amqp://guest:guest@localhost:5672/
 
 # AI service (optional — endpoints return 503 until this is set)
-ANTHROPIC_API_KEY=<your-anthropic-api-key>
-AI_MODEL=claude-opus-5
+GEMINI_API_KEY=<your-gemini-api-key>
+AI_MODEL=gemini-3.6-flash
 
 # Database (PostgreSQL)
 DATABASE_URL=postgresql://postgres:postgres@localhost:5432/askshop?sslmode=disable
@@ -137,7 +137,7 @@ go run ./services/cart-service/cmd
 # Order service (HTTP :8085) — requires cart-service's HTTP endpoint
 go run ./services/order-service/cmd
 
-# AI service (HTTP :8086) — optional; set ANTHROPIC_API_KEY to enable it,
+# AI service (HTTP :8086) — optional; set GEMINI_API_KEY to enable it,
 # otherwise its endpoints return 503
 go run ./services/ai-service/cmd
 
@@ -172,7 +172,7 @@ curl -X POST http://localhost:8081/api/v1/cart/items \
 # Place an order from the cart
 curl -X POST http://localhost:8081/api/v1/orders -H 'X-User-ID: demo-user'
 
-# Ask the shopping assistant (requires ANTHROPIC_API_KEY on ai-service)
+# Ask the shopping assistant (requires GEMINI_API_KEY on ai-service)
 curl -X POST http://localhost:8081/api/v1/ai/chat \
   -H 'Content-Type: application/json' \
   -d '{"message":"show me wireless headphones under $50"}'
@@ -197,8 +197,8 @@ Use `AskShop.postman_collection.json` with the accompanying environment file to 
 `shared/db` encapsulates PostgreSQL connectivity via GORM. Each service provides auto-migrations when the database is reachable: `UserModel` (user-service), `Product`/`ProductImage`/`Category` (product-service), `Cart`/`CartItem`/`SavedItem` (cart-service), `Order`/`OrderItem` (order-service). product-service falls back to an in-memory repository if Postgres is unreachable; cart-service and order-service require Postgres to start.
 
 ## AI Features (ai-service)
-ai-service (`services/ai-service`) uses the official [Anthropic Go SDK](https://github.com/anthropics/anthropic-sdk-go) (`shared` model configurable via `AI_MODEL`, default `claude-opus-5`) and stays disabled (503 on every AI route, logged once at startup) until `ANTHROPIC_API_KEY` is set — nothing else fails to start because of it.
-- **Conversational shopping assistant** (`POST /api/v1/ai/chat`) — a manual tool-use loop (see `internal/service/chat_service.go`) where Claude calls a `search_products` tool backed by product-service's real catalog before answering, so it can't invent products, prices, or stock. Accepts optional `history` for multi-turn conversations.
+ai-service (`services/ai-service`) uses the official [Google Gen AI Go SDK](https://github.com/googleapis/go-genai) (Gemini, model configurable via `AI_MODEL`, default `gemini-3.6-flash`) and stays disabled (503 on every AI route, logged once at startup) until `GEMINI_API_KEY` (or `GOOGLE_API_KEY`) is set — nothing else fails to start because of it.
+- **Conversational shopping assistant** (`POST /api/v1/ai/chat`) — a manual function-calling loop (see `internal/service/chat_service.go`) where Gemini calls a `search_products` function backed by product-service's real catalog before answering, so it can't invent products, prices, or stock. Accepts optional `history` for multi-turn conversations.
 - **Product explanations** (`POST /api/v1/ai/products/:id/explain`) — a single grounded call using only the fetched product's real fields; publishes `ai.cmd.explain_product` over RabbitMQ.
 - **Cart-abandonment nudges** (`POST /api/v1/ai/cart-nudges`, internal/batch — not proxied through the gateway) — reads cart-service's `GET /api/v1/cart/admin/abandoned` and generates a short re-engagement message per abandoned cart. Intended to be triggered on a schedule.
 
@@ -245,7 +245,7 @@ The product service includes a gRPC definition under `shared/proto/product.proto
   the gateway is the next auth-hardening step.
 - ai-service now has a real conversational shopping assistant, product explanations, and
   cart-abandonment nudges (see AI Features above), grounded in the catalog via tool use — it's
-  just inert without `ANTHROPIC_API_KEY`. auth-service is still an empty placeholder.
+  just inert without `GEMINI_API_KEY`. auth-service is still an empty placeholder.
   Semantic/vector search is a reasonable next step beyond the current keyword search.
 - cart-service and order-service require a reachable Postgres to start (no in-memory fallback);
   product-service still degrades to an in-memory repository if Postgres is unreachable.

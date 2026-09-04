@@ -63,7 +63,7 @@ docker_build_with_restart(
   ],
 )
 k8s_yaml('./infra/development/k8s/product-service-deployment.yaml')
-k8s_resource('product-service', port_forwards='8082:8080',
+k8s_resource('product-service', port_forwards=[8082, 9090],
              resource_deps=['product-service-compile'], labels="services")
 
 ### End of Product Service ###
@@ -90,7 +90,7 @@ docker_build_with_restart(
   ],
 )
 k8s_yaml('./infra/development/k8s/cart-service-deployment.yaml')
-k8s_resource('cart-service', port_forwards='8086:8080',
+k8s_resource('cart-service', port_forwards=8083,
               resource_deps=['cart-service-compile'], labels="services")
 ### End of Cart Service ###
 ### AI Service ###
@@ -116,7 +116,7 @@ docker_build_with_restart(
   ],
 )
 k8s_yaml('./infra/development/k8s/ai-service-deployment.yaml')
-k8s_resource('ai-service', port_forwards='8087:8080',
+k8s_resource('ai-service', port_forwards=8086,
               resource_deps=['ai-service-compile'], labels="services")
 ### End of AI Service ###
 ### User Service ###
@@ -142,7 +142,7 @@ docker_build_with_restart(
   ],
 )
 k8s_yaml('./infra/development/k8s/user-service-deployment.yaml')
-k8s_resource('user-service', port_forwards='8085:8080',
+k8s_resource('user-service', port_forwards=8084,
               resource_deps=['user-service-compile'], labels="services")
 ### End of User Service ###
 ### Order Service ###
@@ -168,7 +168,7 @@ docker_build_with_restart(
   ],
 )
 k8s_yaml('./infra/development/k8s/order-service-deployment.yaml')
-k8s_resource('order-service', port_forwards='8084:8080',
+k8s_resource('order-service', port_forwards=8085,
               resource_deps=['order-service-compile'], labels="services")
 ### End of Order Service ###
 

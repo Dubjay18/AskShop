@@ -16,7 +16,7 @@ spec:
         - name: ai-service
           image: askshop/ai-service
           ports:
-            - containerPort: 8087
+            - containerPort: 8086
           resources:
             requests:
               memory: "64Mi"
@@ -33,7 +33,7 @@ spec:
   selector:
     app: ai-service
   ports:
-    - port: 8087
+    - port: 8086
       name: http
-      targetPort: 8087
+      targetPort: 8086
   type: ClusterIP

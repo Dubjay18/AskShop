@@ -9,6 +9,7 @@ import (
 	"askshop/shared/contracts"
 	"askshop/shared/db"
 	"askshop/shared/env"
+	"askshop/shared/health"
 	"askshop/shared/logger"
 
 	"github.com/gin-gonic/gin"
@@ -110,6 +111,8 @@ func main() {
 			c.JSON(500, gin.H{"error": "claims missing"})
 		}
 	})
+
+	health.Register(router, "user")
 
 	// Add a root route
 	router.GET("/", func(c *gin.Context) {

@@ -25,11 +25,13 @@ spec:
               memory: "128Mi"
               cpu: "125m"
           env:
-            # Accessing an env variable from the app-config config map
-            - name: GATEWAY_HTTP_ADDR
+            # Accessing an env variable from the app-config config map. Must be
+            # named HTTP_ADDR to match what services/api-gateway/main.go reads
+            # (env.GetString("HTTP_ADDR", ...)) — GATEWAY_HTTP_ADDR was a no-op.
+            - name: HTTP_ADDR
               valueFrom:
                 configMapKeyRef:
-                  key: GATEWAY_HTTP_ADDR
+                  key: HTTP_ADDR
                   name: app-config
 ---
 apiVersion: v1

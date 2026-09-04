@@ -69,6 +69,20 @@ func userID(c *gin.Context) string {
 	return c.GetHeader("X-User-ID")
 }
 
+// requireUserID rejects the request with 400 if no user identity is present,
+// writing the error response itself. Returns ("", false) in that case so the
+// caller can just `if uid, ok := requireUserID(c); !ok { return }`.
+// Without this, every caller who omits X-User-ID collides on the same
+// empty-string cart.
+func requireUserID(c *gin.Context) (string, bool) {
+	uid := userID(c)
+	if uid == "" {
+		response.Error(c, http.StatusBadRequest, contracts.CodeInvalidRequestBody, "X-User-ID header is required", nil)
+		return "", false
+	}
+	return uid, true
+}
+
 func (h *CartHandler) GetCart(c *gin.Context) {
 	uid := userID(c)
 	cart, err := h.cartService.GetOrCreateCart(c, uid, c.Query("sessionId"))
@@ -92,7 +106,10 @@ func (h *CartHandler) GetCartSummary(c *gin.Context) {
 }
 
 func (h *CartHandler) AddItem(c *gin.Context) {
-	uid := userID(c)
+	uid, ok := requireUserID(c)
+	if !ok {
+		return
+	}
 	var req domain.AddItemRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		response.Error(c, http.StatusBadRequest, contracts.CodeInvalidRequestBody, "Invalid request body", err.Error())
@@ -109,7 +126,10 @@ func (h *CartHandler) AddItem(c *gin.Context) {
 }
 
 func (h *CartHandler) UpdateItemQuantity(c *gin.Context) {
-	uid := userID(c)
+	uid, ok := requireUserID(c)
+	if !ok {
+		return
+	}
 	itemID, err := uuid.Parse(c.Param("itemId"))
 	if err != nil {
 		response.Error(c, http.StatusBadRequest, contracts.CodeInvalidRequestBody, "Invalid item id", nil)
@@ -132,7 +152,10 @@ func (h *CartHandler) UpdateItemQuantity(c *gin.Context) {
 }
 
 func (h *CartHandler) RemoveItem(c *gin.Context) {
-	uid := userID(c)
+	uid, ok := requireUserID(c)
+	if !ok {
+		return
+	}
 	itemID, err := uuid.Parse(c.Param("itemId"))
 	if err != nil {
 		response.Error(c, http.StatusBadRequest, contracts.CodeInvalidRequestBody, "Invalid item id", nil)
@@ -148,7 +171,10 @@ func (h *CartHandler) RemoveItem(c *gin.Context) {
 }
 
 func (h *CartHandler) ClearCart(c *gin.Context) {
-	uid := userID(c)
+	uid, ok := requireUserID(c)
+	if !ok {
+		return
+	}
 	if err := h.cartService.ClearCart(c, uid); err != nil {
 		status, code, msg, details := mapDomainError(err)
 		response.Error(c, status, code, msg, details)
@@ -160,7 +186,10 @@ func (h *CartHandler) ClearCart(c *gin.Context) {
 // CompleteCheckout marks the caller's cart as converted. It's called by
 // order-service once an order has been created from the cart's contents.
 func (h *CartHandler) CompleteCheckout(c *gin.Context) {
-	uid := userID(c)
+	uid, ok := requireUserID(c)
+	if !ok {
+		return
+	}
 	if err := h.cartService.ConvertCart(c, uid); err != nil {
 		status, code, msg, details := mapDomainError(err)
 		response.Error(c, status, code, msg, details)
@@ -188,7 +217,10 @@ func (h *CartHandler) ListAbandonedCarts(c *gin.Context) {
 }
 
 func (h *CartHandler) ValidateCheckout(c *gin.Context) {
-	uid := userID(c)
+	uid, ok := requireUserID(c)
+	if !ok {
+		return
+	}
 	result, err := h.cartService.ValidateCartForCheckout(c, uid)
 	if err != nil {
 		status, code, msg, details := mapDomainError(err)

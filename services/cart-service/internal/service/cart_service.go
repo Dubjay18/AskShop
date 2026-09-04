@@ -159,6 +159,24 @@ func (s *CartServiceImpl) AddItem(ctx *gin.Context, userID string, productID uui
 	return s.repo.GetCartWithItems(ctx, cart.ID)
 }
 
+// assertItemOwnedByUser verifies that cartID belongs to userID before any
+// item-level mutation. Item IDs are opaque UUIDs handed back to clients, so
+// without this check any caller who learns another user's item ID (by
+// guessing, log exposure, a shared order confirmation, etc.) could read or
+// mutate that user's cart. Returns ErrItemNotFound in every failure case
+// (rather than distinguishing "not yours" from "doesn't exist") to avoid
+// giving an attacker an existence oracle.
+func (s *CartServiceImpl) assertItemOwnedByUser(ctx *gin.Context, userID string, cartID uuid.UUID) error {
+	cart, err := s.repo.GetCartByUserID(ctx, userID)
+	if err != nil {
+		return domain.ErrItemNotFound
+	}
+	if cart.ID != cartID {
+		return domain.ErrItemNotFound
+	}
+	return nil
+}
+
 // UpdateItemQuantity updates the quantity of a cart item
 func (s *CartServiceImpl) UpdateItemQuantity(ctx *gin.Context, userID string, itemID uuid.UUID, quantity int) (*domain.Cart, error) {
 	// Validate quantity
@@ -171,15 +189,17 @@ func (s *CartServiceImpl) UpdateItemQuantity(ctx *gin.Context, userID string, it
 		return nil, s.RemoveItem(ctx, userID, itemID)
 	}
 
-	// Update item
-	if err := s.repo.UpdateCartItem(ctx, itemID, quantity); err != nil {
-		return nil, fmt.Errorf("failed to update cart item: %w", err)
-	}
-
-	// Get cart for the item
 	item, err := s.repo.GetCartItem(ctx, itemID)
 	if err != nil {
 		return nil, err
+	}
+	if err := s.assertItemOwnedByUser(ctx, userID, item.CartID); err != nil {
+		return nil, err
+	}
+
+	// Update item
+	if err := s.repo.UpdateCartItem(ctx, itemID, quantity); err != nil {
+		return nil, fmt.Errorf("failed to update cart item: %w", err)
 	}
 
 	return s.repo.GetCartWithItems(ctx, item.CartID)
@@ -187,6 +207,14 @@ func (s *CartServiceImpl) UpdateItemQuantity(ctx *gin.Context, userID string, it
 
 // RemoveItem removes an item from the cart
 func (s *CartServiceImpl) RemoveItem(ctx *gin.Context, userID string, itemID uuid.UUID) error {
+	item, err := s.repo.GetCartItem(ctx, itemID)
+	if err != nil {
+		return fmt.Errorf("failed to remove cart item: %w", err)
+	}
+	if err := s.assertItemOwnedByUser(ctx, userID, item.CartID); err != nil {
+		return err
+	}
+
 	if err := s.repo.RemoveCartItem(ctx, itemID); err != nil {
 		return fmt.Errorf("failed to remove cart item: %w", err)
 	}
@@ -227,6 +255,9 @@ func (s *CartServiceImpl) SaveForLater(ctx *gin.Context, userID string, itemID u
 	// Get cart item
 	item, err := s.repo.GetCartItem(ctx, itemID)
 	if err != nil {
+		return err
+	}
+	if err := s.assertItemOwnedByUser(ctx, userID, item.CartID); err != nil {
 		return err
 	}
 

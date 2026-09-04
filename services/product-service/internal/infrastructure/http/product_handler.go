@@ -136,6 +136,11 @@ func (h *ProductHandler) ListProducts(c *gin.Context) {
 // GetProduct handles GET /api/v1/products/:id.
 func (h *ProductHandler) GetProduct(c *gin.Context) {
 	id := c.Param("id")
+	if _, err := uuid.Parse(id); err != nil {
+		response.Error(c, http.StatusBadRequest, contracts.CodeInvalidRequestBody, "Invalid product id", nil)
+		return
+	}
+
 	product, err := h.service.GetProductByID(c.Request.Context(), id)
 	if err != nil {
 		status, code, msg, details := mapDomainError(err)

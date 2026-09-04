@@ -6,12 +6,40 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"strings"
 	"time"
 )
+
+// ServiceError wraps a downstream service's HTTP error response, preserving
+// its status code so callers can forward it instead of collapsing every
+// failure to 500.
+type ServiceError struct {
+	StatusCode int
+	Code       string
+	Message    string
+}
+
+func (e *ServiceError) Error() string {
+	return fmt.Sprintf("service returned %d: %s", e.StatusCode, e.Message)
+}
+
+// StatusAndMessage extracts the downstream HTTP status and message from an
+// error returned by ServiceClient, so gateway handlers can forward the real
+// status instead of hardcoding 500 for every failure (a validation error
+// downstream is not the gateway's fault, and clients need to tell the two
+// apart). Non-ServiceError failures (network errors, timeouts, marshaling)
+// still default to 500 since there's no real downstream response to relay.
+func StatusAndMessage(err error) (int, string) {
+	var svcErr *ServiceError
+	if errors.As(err, &svcErr) {
+		return svcErr.StatusCode, svcErr.Message
+	}
+	return http.StatusInternalServerError, err.Error()
+}
 
 // ServiceClient is a REST client for service-to-service communication
 type ServiceClient struct {
@@ -119,10 +147,10 @@ func (c *ServiceClient) doRequest(ctx context.Context, method, path string, body
 	// Check if status code indicates error
 	if resp.StatusCode >= 400 {
 		var apiError contracts.APIResponse
-		if err := json.Unmarshal(respBody, &apiError); err != nil {
-			return fmt.Errorf("service returned status %d: %s", resp.StatusCode, string(respBody))
+		if err := json.Unmarshal(respBody, &apiError); err != nil || apiError.Error == nil {
+			return &ServiceError{StatusCode: resp.StatusCode, Message: string(respBody)}
 		}
-		return fmt.Errorf("service returned error: %s", apiError.Error.Message)
+		return &ServiceError{StatusCode: resp.StatusCode, Code: apiError.Error.Code, Message: apiError.Error.Message}
 	}
 
 	// If no result is expected, return nil

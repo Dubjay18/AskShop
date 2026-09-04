@@ -14,6 +14,18 @@ import (
 	"time"
 )
 
+// StatusError preserves product-service's HTTP status so callers can map
+// "not found" (404) and "bad request" (400) distinctly instead of collapsing
+// every failure to 500.
+type StatusError struct {
+	StatusCode int
+	Message    string
+}
+
+func (e *StatusError) Error() string {
+	return fmt.Sprintf("product-service returned %d: %s", e.StatusCode, e.Message)
+}
+
 type envelope struct {
 	Success bool            `json:"success"`
 	Data    json.RawMessage `json:"data"`
@@ -65,14 +77,14 @@ func (c *Client) get(ctx context.Context, path string, out interface{}) error {
 
 	var env envelope
 	if err := json.Unmarshal(raw, &env); err != nil {
-		return fmt.Errorf("product-service returned unexpected body (status %d): %s", resp.StatusCode, string(raw))
+		return &StatusError{StatusCode: resp.StatusCode, Message: string(raw)}
 	}
 	if !env.Success {
 		msg := "product-service request failed"
 		if env.Error != nil && env.Error.Message != "" {
 			msg = env.Error.Message
 		}
-		return fmt.Errorf("%s", msg)
+		return &StatusError{StatusCode: resp.StatusCode, Message: msg}
 	}
 	if out != nil && len(env.Data) > 0 {
 		return json.Unmarshal(env.Data, out)

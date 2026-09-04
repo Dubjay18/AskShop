@@ -1,6 +1,7 @@
 package http
 
 import (
+	"askshop/services/ai-service/internal/productclient"
 	"askshop/services/ai-service/internal/service"
 	"askshop/shared/contracts"
 	"askshop/shared/events"
@@ -33,6 +34,12 @@ func (h *AIHandler) RegisterRoutes(router *gin.Engine) {
 func mapError(err error) (int, string, string) {
 	if errors.Is(err, service.ErrLLMUnavailable) {
 		return http.StatusServiceUnavailable, contracts.CodeInternalServerError, err.Error()
+	}
+	var statusErr *productclient.StatusError
+	if errors.As(err, &statusErr) && statusErr.StatusCode >= 400 && statusErr.StatusCode < 500 {
+		// Forward product-service's own 4xx (not found, bad id, etc.) instead
+		// of collapsing every failure to 500.
+		return statusErr.StatusCode, contracts.CodeInternalServerError, err.Error()
 	}
 	return http.StatusInternalServerError, contracts.CodeInternalServerError, err.Error()
 }

@@ -7,6 +7,8 @@ import (
 	"askshop/shared/response"
 	"errors"
 	"net/http"
+	"strconv"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -52,6 +54,9 @@ func (h *CartHandler) RegisterRoutes(router *gin.Engine) {
 		cart.DELETE("", h.ClearCart)
 		cart.POST("/checkout/validate", h.ValidateCheckout)
 		cart.POST("/checkout/complete", h.CompleteCheckout)
+		// Internal/admin endpoint (no auth gate yet): used by ai-service to
+		// generate cart-abandonment nudges. Not exposed through the gateway.
+		cart.GET("/admin/abandoned", h.ListAbandonedCarts)
 	}
 }
 
@@ -162,6 +167,24 @@ func (h *CartHandler) CompleteCheckout(c *gin.Context) {
 		return
 	}
 	response.Success(c, http.StatusOK, nil, nil, "Cart marked as converted")
+}
+
+// ListAbandonedCarts returns active carts untouched for at least sinceMinutes
+// (default 60). Used by ai-service to generate re-engagement nudges.
+func (h *CartHandler) ListAbandonedCarts(c *gin.Context) {
+	minutes, err := strconv.Atoi(c.DefaultQuery("sinceMinutes", "60"))
+	if err != nil || minutes <= 0 {
+		minutes = 60
+	}
+	since := time.Now().Add(-time.Duration(minutes) * time.Minute)
+
+	carts, err := h.cartService.GetAbandonedCarts(c, since)
+	if err != nil {
+		status, code, msg, details := mapDomainError(err)
+		response.Error(c, status, code, msg, details)
+		return
+	}
+	response.Success(c, http.StatusOK, carts, nil, "")
 }
 
 func (h *CartHandler) ValidateCheckout(c *gin.Context) {

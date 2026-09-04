@@ -100,6 +100,7 @@ func mapDomainError(err error) (int, string, string, interface{}) {
 // ListProducts handles GET /api/v1/products, optionally filtered by category and paginated.
 func (h *ProductHandler) ListProducts(c *gin.Context) {
 	category := c.Query("category")
+	query := c.Query("q")
 	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
 	pageSize, _ := strconv.Atoi(c.DefaultQuery("pageSize", "20"))
 	if pageSize <= 0 {
@@ -111,9 +112,12 @@ func (h *ProductHandler) ListProducts(c *gin.Context) {
 		total    int64
 		err      error
 	)
-	if category != "" {
+	switch {
+	case query != "":
+		products, total, err = h.service.SearchProducts(c.Request.Context(), query, page, pageSize)
+	case category != "":
 		products, total, err = h.service.GetProductsByCategoryPage(c.Request.Context(), category, page, pageSize)
-	} else {
+	default:
 		products, total, err = h.service.GetProductsPage(c.Request.Context(), page, pageSize)
 	}
 	if err != nil {

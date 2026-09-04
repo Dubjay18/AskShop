@@ -52,6 +52,7 @@ func main() {
 	productClient := rest.NewServiceClient("product")
 	cartClient := rest.NewServiceClient("cart")
 	orderClient := rest.NewServiceClient("order")
+	aiClient := rest.NewServiceClient("ai")
 
 	// API v1 group
 	v1 := router.Group(contracts.Routes.APIBase)
@@ -160,6 +161,33 @@ func main() {
 			var raw map[string]interface{}
 			if err := orderClient.Get(userCtx(c), "/api/v1/orders/"+c.Param("id"), &raw); err != nil {
 				response.Error(c, http.StatusNotFound, contracts.CodeInternalServerError, "Order not found", err.Error())
+				return
+			}
+			response.Success(c, http.StatusOK, raw, nil, "")
+		})
+	}
+
+	// AI routes (proxied). The shopping assistant, product explanations, and
+	// the cart-nudge batch endpoint.
+	ai := v1.Group("/ai")
+	{
+		ai.POST("/chat", func(c *gin.Context) {
+			var body interface{}
+			if err := c.ShouldBindJSON(&body); err != nil {
+				response.Error(c, http.StatusBadRequest, contracts.CodeInvalidRequestBody, "Invalid request body", err.Error())
+				return
+			}
+			var raw map[string]interface{}
+			if err := aiClient.Post(c.Request.Context(), "/api/v1/ai/chat", body, &raw); err != nil {
+				response.Error(c, http.StatusInternalServerError, contracts.CodeInternalServerError, "Error reaching AI service", err.Error())
+				return
+			}
+			response.Success(c, http.StatusOK, raw, nil, "")
+		})
+		ai.POST("/products/:id/explain", func(c *gin.Context) {
+			var raw map[string]interface{}
+			if err := aiClient.Post(c.Request.Context(), "/api/v1/ai/products/"+c.Param("id")+"/explain", nil, &raw); err != nil {
+				response.Error(c, http.StatusInternalServerError, contracts.CodeInternalServerError, "Error reaching AI service", err.Error())
 				return
 			}
 			response.Success(c, http.StatusOK, raw, nil, "")

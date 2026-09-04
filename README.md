@@ -78,6 +78,10 @@ AUTH_SERVICE_GRPC_ADDR=auth-service:9094
 # RabbitMQ (optional — order-service degrades to log-only if unset/unreachable)
 RABBITMQ_URL=amqp://guest:guest@localhost:5672/
 
+# AI service (optional — endpoints return 503 until this is set)
+ANTHROPIC_API_KEY=<your-anthropic-api-key>
+AI_MODEL=claude-opus-5
+
 # Database (PostgreSQL)
 DATABASE_URL=postgresql://postgres:postgres@localhost:5432/askshop?sslmode=disable
 DB_HOST=localhost
@@ -133,6 +137,10 @@ go run ./services/cart-service/cmd
 # Order service (HTTP :8085) — requires cart-service's HTTP endpoint
 go run ./services/order-service/cmd
 
+# AI service (HTTP :8086) — optional; set ANTHROPIC_API_KEY to enable it,
+# otherwise its endpoints return 503
+go run ./services/ai-service/cmd
+
 # API gateway (HTTP :8081) — fronts all of the above
 go run ./services/api-gateway
 ```
@@ -163,8 +171,13 @@ curl -X POST http://localhost:8081/api/v1/cart/items \
 
 # Place an order from the cart
 curl -X POST http://localhost:8081/api/v1/orders -H 'X-User-ID: demo-user'
+
+# Ask the shopping assistant (requires ANTHROPIC_API_KEY on ai-service)
+curl -X POST http://localhost:8081/api/v1/ai/chat \
+  -H 'Content-Type: application/json' \
+  -d '{"message":"show me wireless headphones under $50"}'
 ```
-Auth and AI services still ship with stub `main` functions.
+auth-service still ships with a stub `main` function.
 
 ## API Surface
 The gateway exposes REST resources under `/api/v1` using the contracts defined in `shared/contracts/routes.go`.
@@ -172,14 +185,22 @@ The gateway exposes REST resources under `/api/v1` using the contracts defined i
 - `POST /api/v1/auth/login` – email/password login (returns Supabase tokens).
 - `GET /api/v1/auth/service-diagnostics` – development-only pass-through to user service diagnostics.
 - `GET /api/v1/users/:id` and `GET /api/v1/users/by-email?email=` – fetch user profiles (served by user-service).
-- `GET /api/v1/products` and `GET /api/v1/products/:id` – browse the catalog (served by product-service).
+- `GET /api/v1/products`, `GET /api/v1/products/:id`, `GET /api/v1/products?q=` – browse and search the catalog (served by product-service).
 - `GET /api/v1/cart`, `POST /api/v1/cart/items`, `PUT|DELETE /api/v1/cart/items/:itemId` – manage the caller's cart (served by cart-service, priced live against product-service).
 - `POST /api/v1/orders`, `GET /api/v1/orders`, `GET /api/v1/orders/:id` – place and read orders (served by order-service; validates and converts the cart, publishes `order.event.placed`).
+- `POST /api/v1/ai/chat` – conversational shopping assistant (served by ai-service; uses a `search_products` tool against product-service so answers are grounded in the real catalog, never invented).
+- `POST /api/v1/ai/products/:id/explain` – short AI-generated explanation of a single product.
 
 Use `AskShop.postman_collection.json` with the accompanying environment file to play through end-to-end flows.
 
 ## Database & Migrations
 `shared/db` encapsulates PostgreSQL connectivity via GORM. Each service provides auto-migrations when the database is reachable: `UserModel` (user-service), `Product`/`ProductImage`/`Category` (product-service), `Cart`/`CartItem`/`SavedItem` (cart-service), `Order`/`OrderItem` (order-service). product-service falls back to an in-memory repository if Postgres is unreachable; cart-service and order-service require Postgres to start.
+
+## AI Features (ai-service)
+ai-service (`services/ai-service`) uses the official [Anthropic Go SDK](https://github.com/anthropics/anthropic-sdk-go) (`shared` model configurable via `AI_MODEL`, default `claude-opus-5`) and stays disabled (503 on every AI route, logged once at startup) until `ANTHROPIC_API_KEY` is set — nothing else fails to start because of it.
+- **Conversational shopping assistant** (`POST /api/v1/ai/chat`) — a manual tool-use loop (see `internal/service/chat_service.go`) where Claude calls a `search_products` tool backed by product-service's real catalog before answering, so it can't invent products, prices, or stock. Accepts optional `history` for multi-turn conversations.
+- **Product explanations** (`POST /api/v1/ai/products/:id/explain`) — a single grounded call using only the fetched product's real fields; publishes `ai.cmd.explain_product` over RabbitMQ.
+- **Cart-abandonment nudges** (`POST /api/v1/ai/cart-nudges`, internal/batch — not proxied through the gateway) — reads cart-service's `GET /api/v1/cart/admin/abandoned` and generates a short re-engagement message per abandoned cart. Intended to be triggered on a schedule.
 
 ## Events (RabbitMQ)
 `shared/events` is a thin publisher/consumer over a single `askshop.events` topic exchange, keyed by the routing keys declared in `shared/contracts/amqp.go`. order-service publishes `order.event.placed` after checkout and runs a demonstration consumer (`order-service.notify-stub`) that logs what it receives — a stand-in for a future dedicated notification service. If `RABBITMQ_URL` is unset or the broker is unreachable, publishing/consuming no-ops with a log line rather than failing service startup.
@@ -222,10 +243,14 @@ The product service includes a gRPC definition under `shared/proto/product.proto
 - The gateway forwards identity via an `X-User-ID` header for now — there's no JWT verification
   in the request path yet. Wiring `shared/auth` (or auth-service, still a placeholder) through
   the gateway is the next auth-hardening step.
-- auth and AI services are still empty placeholders awaiting domain logic. AI-powered features
-  (conversational shopping assistant, semantic search, product Q&A) are next up.
+- ai-service now has a real conversational shopping assistant, product explanations, and
+  cart-abandonment nudges (see AI Features above), grounded in the catalog via tool use — it's
+  just inert without `ANTHROPIC_API_KEY`. auth-service is still an empty placeholder.
+  Semantic/vector search is a reasonable next step beyond the current keyword search.
 - cart-service and order-service require a reachable Postgres to start (no in-memory fallback);
   product-service still degrades to an in-memory repository if Postgres is unreachable.
+- The AI cart-nudge endpoint has no scheduler wired up yet — it's designed to be triggered by
+  cron/Tilt/an external job runner, not called automatically.
 - Tilt pipeline currently builds Linux/amd64 binaries; adjust if your target architecture differs.
 - Per-service unit tests are still thin. A GitHub Actions CI workflow (`.github/workflows/ci.yml`)
   now runs `gofmt`, `go vet`, `go build`, and `go test` on every push/PR to `main`.

@@ -84,6 +84,18 @@ func (r *PGProductRepository) GetProductByCategoryPage(ctx context.Context, cate
 	return products, total, err
 }
 
+func (r *PGProductRepository) SearchProducts(ctx context.Context, query string, limit, offset int) ([]*domain.Product, int64, error) {
+	var total int64
+	if err := r.db.WithContext(ctx).Model(&domain.Product{}).Scopes(domain.ScopeSearch(query)).Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
+
+	var products []*domain.Product
+	err := r.preload().WithContext(ctx).Scopes(domain.ScopeSearch(query)).
+		Limit(limit).Offset(offset).Order("created_at DESC").Find(&products).Error
+	return products, total, err
+}
+
 func (r *PGProductRepository) CreateProduct(ctx context.Context, product *domain.Product) (*domain.Product, error) {
 	if err := r.db.WithContext(ctx).Create(product).Error; err != nil {
 		return nil, err

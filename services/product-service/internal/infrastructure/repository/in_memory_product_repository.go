@@ -4,6 +4,7 @@ import (
 	"askshop/services/product-service/internal/domain"
 	"context"
 	"errors"
+	"strings"
 	"sync"
 	"time"
 
@@ -18,6 +19,8 @@ type ProductRepository interface {
 	// Paginated variants return items and total count
 	GetAllProductsPage(ctx context.Context, limit, offset int) ([]*domain.Product, int64, error)
 	GetProductByCategoryPage(ctx context.Context, category string, limit, offset int) ([]*domain.Product, int64, error)
+	// SearchProducts does a keyword search over name/slug/sku (see domain.ScopeSearch).
+	SearchProducts(ctx context.Context, query string, limit, offset int) ([]*domain.Product, int64, error)
 	// Write operations
 	CreateProduct(ctx context.Context, product *domain.Product) (*domain.Product, error)
 	UpdateProduct(ctx context.Context, product *domain.Product) (*domain.Product, error)
@@ -98,6 +101,33 @@ func (r *InMemoryProductRepository) GetAllProductsPage(ctx context.Context, limi
 
 func (r *InMemoryProductRepository) GetProductByCategoryPage(ctx context.Context, category string, limit, offset int) ([]*domain.Product, int64, error) {
 	return []*domain.Product{}, 0, nil
+}
+
+func (r *InMemoryProductRepository) SearchProducts(ctx context.Context, query string, limit, offset int) ([]*domain.Product, int64, error) {
+	q := strings.ToLower(strings.TrimSpace(query))
+	all, _ := r.GetAllProducts(ctx)
+	if q == "" {
+		return all, int64(len(all)), nil
+	}
+
+	matched := make([]*domain.Product, 0, len(all))
+	for _, p := range all {
+		if strings.Contains(strings.ToLower(p.Name), q) ||
+			strings.Contains(strings.ToLower(p.Slug), q) ||
+			strings.Contains(strings.ToLower(p.SKU), q) {
+			matched = append(matched, p)
+		}
+	}
+
+	total := int64(len(matched))
+	if offset >= len(matched) {
+		return []*domain.Product{}, total, nil
+	}
+	end := offset + limit
+	if end > len(matched) {
+		end = len(matched)
+	}
+	return matched[offset:end], total, nil
 }
 
 func (r *InMemoryProductRepository) CreateProduct(ctx context.Context, product *domain.Product) (*domain.Product, error) {

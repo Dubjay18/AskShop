@@ -13,6 +13,7 @@ type ProductService interface {
 	// Pagination
 	GetProductsPage(ctx context.Context, page, pageSize int) ([]*Product, int64, error)
 	GetProductsByCategoryPage(ctx context.Context, category string, page, pageSize int) ([]*Product, int64, error)
+	SearchProducts(ctx context.Context, query string, page, pageSize int) ([]*Product, int64, error)
 	// Write operations
 	CreateProduct(ctx context.Context, product *Product) (*Product, error)
 	UpdateProduct(ctx context.Context, product *Product) (*Product, error)

@@ -35,6 +35,8 @@ func NewServiceClient(serviceName string) *ServiceClient {
 		port = "8083" // cart-service default from its main.go
 	case "order":
 		port = "8085" // order-service default from its main.go
+	case "ai":
+		port = "8086" // ai-service default from its main.go
 	}
 	def := fmt.Sprintf("http://%s-service:%s", strings.ToLower(serviceName), port)
 	baseURL := env.GetString(key, def)

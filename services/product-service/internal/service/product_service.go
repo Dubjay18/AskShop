@@ -59,6 +59,12 @@ func (s *ProductServiceImpl) GetProductsByCategoryPage(ctx context.Context, cate
 	return s.repo.GetProductByCategoryPage(ctx, category, pageSize, offset)
 }
 
+func (s *ProductServiceImpl) SearchProducts(ctx context.Context, query string, page, pageSize int) ([]*domain.Product, int64, error) {
+	page, pageSize = clampPagination(page, pageSize)
+	offset := (page - 1) * pageSize
+	return s.repo.SearchProducts(ctx, query, pageSize, offset)
+}
+
 func (s *ProductServiceImpl) CreateProduct(ctx context.Context, product *domain.Product) (*domain.Product, error) {
 	return s.repo.CreateProduct(ctx, product)
 }

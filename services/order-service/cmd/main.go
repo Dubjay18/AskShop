@@ -10,6 +10,7 @@ import (
 	"askshop/shared/db"
 	"askshop/shared/env"
 	"askshop/shared/events"
+	"askshop/shared/health"
 	"context"
 	"log"
 
@@ -49,6 +50,7 @@ func main() {
 
 	r := gin.Default()
 	r.GET("/", func(c *gin.Context) { c.JSON(200, gin.H{"service": "order", "status": "ok"}) })
+	health.Register(r, "order")
 	orderhttp.NewOrderHandler(orderService).RegisterRoutes(r)
 
 	log.Printf("Order Service listening on %s", httpAddr)

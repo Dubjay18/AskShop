@@ -8,6 +8,7 @@ import (
 	"askshop/services/cart-service/internal/service"
 	"askshop/shared/db"
 	"askshop/shared/env"
+	"askshop/shared/health"
 	"log"
 
 	"github.com/gin-gonic/gin"
@@ -40,6 +41,7 @@ func main() {
 
 	r := gin.Default()
 	r.GET("/", func(c *gin.Context) { c.JSON(200, gin.H{"service": "cart", "status": "ok"}) })
+	health.Register(r, "cart")
 	rest.NewCartHandler(cartService).RegisterRoutes(r)
 
 	log.Printf("Cart Service listening on %s", httpAddr)

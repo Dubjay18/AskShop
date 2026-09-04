@@ -8,6 +8,7 @@ import (
 	"askshop/services/ai-service/internal/service"
 	"askshop/shared/env"
 	"askshop/shared/events"
+	"askshop/shared/health"
 	"log"
 
 	"github.com/gin-gonic/gin"
@@ -35,6 +36,7 @@ func main() {
 
 	r := gin.Default()
 	r.GET("/", func(c *gin.Context) { c.JSON(200, gin.H{"service": "ai", "status": "ok"}) })
+	health.Register(r, "ai")
 	aihttp.NewAIHandler(aiService, publisher).RegisterRoutes(r)
 
 	log.Printf("AI Service listening on %s", httpAddr)

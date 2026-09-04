@@ -8,6 +8,7 @@ import (
 	"askshop/services/product-service/internal/service"
 	"askshop/shared/db"
 	"askshop/shared/env"
+	"askshop/shared/health"
 	"log"
 	"strings"
 
@@ -63,6 +64,7 @@ func main() {
 	// HTTP server
 	r := gin.Default()
 	r.GET("/", func(c *gin.Context) { c.JSON(200, gin.H{"service": "product", "status": "ok"}) })
+	health.Register(r, "product")
 	producthttp.NewProductHandler(productService).RegisterRoutes(r)
 
 	if err := r.Run(httpAddr); err != nil {

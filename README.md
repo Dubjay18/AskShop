@@ -3,12 +3,16 @@
 AskShop is a Go-based, service-oriented commerce backend that experiments with Supabase authentication, gRPC between services, and an API Gateway front door. The repository is organised as a modular monorepo so individual verticals (user, product, cart, order, AI) can evolve independently while sharing contracts, utilities, and infrastructure scripts.
 
 ## Architecture at a Glance
-- API Gateway exposes REST endpoints on port 8081 and forwards requests to downstream services with shared tracing, response, and validation helpers.
-- User Service provides registration and login workflows that use Supabase Auth in production and fall back to local JWT validation when Supabase is unavailable.
-- Product Service exposes a gRPC API (port 9090) with skeletal HTTP handlers. It currently runs with an in-memory repository while the PostgreSQL implementation is being finalised.
-- Cart, Order, Auth, and AI services are scaffolded entry points ready for future business logic. The `tools/create_service.go` helper can spin up additional services with the same clean architecture layout.
-- Shared packages (`shared/...`) offer common contracts (HTTP, gRPC, AMQP event keys), environment loading, database setup (GORM + PostgreSQL), structured logging, retry helpers, and Supabase client utilities.
-- Infrastructure is scripted for either Kubernetes (via Tilt + Docker builds) or manual local execution. Secrets are injected through `.env` files or Kubernetes secrets.
+See [ARCHITECTURE.md](./ARCHITECTURE.md) for the full service map and request/event flow diagrams. Short version:
+- API Gateway (port 8081) is the only public entry point; it proxies to every backend service over REST and owns no business logic of its own.
+- User Service handles registration/login, using Supabase Auth in production with a local JWT fallback.
+- Product Service (REST :8082, gRPC :9090) owns the catalog — Postgres-backed with an in-memory fallback if the DB is unreachable.
+- Cart Service (:8083) owns carts, pricing every item live against Product Service over gRPC (never hardcoded).
+- Order Service (:8085) validates and converts carts into orders, publishing `order.event.placed` over RabbitMQ.
+- AI Service (:8086) is a Gemini-backed shopping assistant, product-explanation, and cart-nudge service, grounded in the real catalog via function calling — inert (503) without a `GEMINI_API_KEY`.
+- Auth Service is still an unimplemented placeholder; the `tools/create_service.go` helper can scaffold additional services with the same clean-architecture layout.
+- Shared packages (`shared/...`) provide common contracts (HTTP/gRPC/AMQP), environment loading, database setup (GORM + PostgreSQL), a RabbitMQ pub/sub wrapper, structured logging, a `/healthz` helper, retry helpers, and Supabase client utilities.
+- Infrastructure supports three local-dev paths: Tilt + Kubernetes, `docker compose`, or running each Go binary manually. Secrets are injected through `.env` files or Kubernetes secrets.
 
 ## Repository Layout
 ```
@@ -179,6 +183,23 @@ curl -X POST http://localhost:8081/api/v1/ai/chat \
 ```
 auth-service still ships with a stub `main` function.
 
+### Option 3: docker compose (fastest to start, no Tilt/K8s required)
+For local iteration without a Kubernetes cluster:
+```bash
+docker compose up -d postgres rabbitmq          # infra first
+docker compose up -d                            # start every service
+docker compose run --rm product-service go run ./services/product-service/cmd/seed
+```
+Each service container runs `go run` against the mounted source tree — no image build step,
+edits take effect on `docker compose restart <service>`. Set `GEMINI_API_KEY`, `SUPABASE_URL`,
+`SUPABASE_KEY`, and (only if you want to override the `postgres` local-dev default) `POSTGRES_USER`
+in a `.env` file at the repo root (docker compose reads it automatically) to enable AI features
+and Supabase auth. The compose Postgres container uses trust auth (no password needed or checked)
+since it's local-only and never exposed beyond the compose network. Ports match the manual/Tilt
+setup: gateway on `:8081`,
+product on `:8082`/`:9090` (gRPC), cart on `:8083`, user on `:8084`, order on `:8085`, AI on
+`:8086`, Postgres on `:5432`, RabbitMQ on `:5672` (management UI on `:15672`).
+
 ## API Surface
 The gateway exposes REST resources under `/api/v1` using the contracts defined in `shared/contracts/routes.go`.
 - `POST /api/v1/auth/register` – create a user through Supabase Auth.
@@ -214,6 +235,10 @@ The product service includes a gRPC definition under `shared/proto/product.proto
 - `shared/logger` provides structured logging with context propagation and a Gin middleware that attaches `request_id` metadata. API gateway requests automatically include request IDs in downstream calls.
 - `shared/response` normalises HTTP response envelopes (`success`, `error`, `trace_id`) so clients receive consistent payloads.
 - `shared/retry` offers exponential backoff helpers for external integrations.
+- `shared/health` registers a consistent `GET /healthz` on every service (`{"service": "<name>", "status": "ok"}`), for container orchestrators and manual checks. It doesn't currently check DB/broker connectivity — a liveness check, not a full readiness check.
+
+## Testing
+- `go test ./...` runs unit tests for pure domain logic: cart-service's `CartItemBuilder`/`CartManager` (validation, totals, abandonment detection), product-service's slugify/`BeforeCreate` hooks and pagination clamping, and small `shared/` helpers (`contracts.JoinPaths`, `util.GetRandomAvatar`). Repository and HTTP-handler layers are still only covered by manual/Postman testing — no DB-backed or integration tests yet.
 
 ## Scripts & Tooling
 - `scripts/diagnose-supabase.sh` – interactive DNS and HTTP troubleshooting for Supabase projects.
@@ -251,9 +276,22 @@ The product service includes a gRPC definition under `shared/proto/product.proto
   product-service still degrades to an in-memory repository if Postgres is unreachable.
 - The AI cart-nudge endpoint has no scheduler wired up yet — it's designed to be triggered by
   cron/Tilt/an external job runner, not called automatically.
+- **Known bug in the Tilt/Kubernetes port config**: the container ports declared in
+  `infra/development/k8s/*-deployment.yaml`, the `port_forwards` in `Tiltfile`, and each
+  service's actual `HTTP_ADDR` default in code disagree with each other for product-service,
+  cart-service, ai-service, and order-service (e.g. product-service's code default is `:8082`,
+  its k8s `containerPort` is `8083`, and Tilt forwards `8082:8080`). This predates this revamp
+  and wasn't fixed here — untangling it needs a real cluster to verify against, which wasn't
+  available in this environment. `docker compose` (see above) sidesteps it entirely since it
+  reads the same `HTTP_ADDR` defaults as manual/`go run` execution. Fix before relying on Tilt.
 - Tilt pipeline currently builds Linux/amd64 binaries; adjust if your target architecture differs.
-- Per-service unit tests are still thin. A GitHub Actions CI workflow (`.github/workflows/ci.yml`)
-  now runs `gofmt`, `go vet`, `go build`, and `go test` on every push/PR to `main`.
+- `go test ./...` now covers cart-service and product-service's pure domain logic (see Testing
+  above) plus a couple of `shared/` helpers — repository/handler layers and cross-service flows
+  are still untested beyond manual/Postman checks. A GitHub Actions CI workflow
+  (`.github/workflows/ci.yml`) runs `gofmt`, `go vet`, `go build`, and `go test` on every push/PR
+  to `main`.
+- Every service now exposes `GET /healthz` (see Logging/Observability above), but it's a liveness
+  check only — it doesn't verify DB/broker connectivity, so it can't yet back a real readiness probe.
 
 ## Support & Questions
 Open an issue or leave notes in the relevant service README. When investigating Supabase connectivity, start with `scripts/diagnose-supabase.sh` and ensure your `.env` matches the latest Supabase dashboard credentials.

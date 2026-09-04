@@ -1,0 +1,158 @@
+name: askshop
+
+# Lightweight local-dev alternative to the Tilt + Kubernetes workflow: no
+# cluster required, just `docker compose up`. Services run via `go run`
+# against the mounted source tree (not production images — see
+# infra/production for those) so code edits pick up on container restart.
+#
+# Usage:
+#   docker compose up -d postgres rabbitmq   # infra first
+#   docker compose up -d                     # everything, or add specific services
+#   docker compose run --rm product-service go run ./services/product-service/cmd/seed
+
+x-go-service: &go-service
+  image: golang:1.24-bookworm
+  working_dir: /app
+  volumes:
+    - .:/app
+    - go-mod-cache:/go/pkg/mod
+  environment: &go-env
+    ENV: development
+    DB_HOST: postgres
+    DB_PORT: "5432"
+    DB_USER: ${POSTGRES_USER:-postgres}
+    DB_NAME: askshop
+    DB_SSLMODE: disable
+    RABBITMQ_URL: amqp://guest:guest@rabbitmq:5672/
+    PRODUCT_SERVICE_URL: http://product-service:8082
+    PRODUCT_SERVICE_GRPC_ADDR: product-service:9090
+    CART_SERVICE_URL: http://cart-service:8083
+    ORDER_SERVICE_URL: http://order-service:8085
+    USER_SERVICE_URL: http://user-service:8084
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      # Local-dev only, never exposed beyond this compose network: trust auth
+      # means no password is needed (or checked) at all, so none is set here.
+      # Override by setting POSTGRES_HOST_AUTH_METHOD/POSTGRES_PASSWORD in a
+      # .env file if you want real auth for some reason.
+      POSTGRES_HOST_AUTH_METHOD: trust
+      POSTGRES_DB: askshop
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  rabbitmq:
+    image: rabbitmq:3-management-alpine
+    ports:
+      - "5672:5672"
+      - "15672:15672" # management UI
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  user-service:
+    <<: *go-service
+    command: go run ./services/user-service/cmd/main.go
+    environment:
+      <<: *go-env
+      HTTP_ADDR: ":8084"
+    ports:
+      - "8084:8084"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  product-service:
+    <<: *go-service
+    command: go run ./services/product-service/cmd
+    environment:
+      <<: *go-env
+      HTTP_ADDR: ":8082"
+      PRODUCT_SERVICE_GRPC_ADDR: ":9090"
+    ports:
+      - "8082:8082"
+      - "9090:9090"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  cart-service:
+    <<: *go-service
+    command: go run ./services/cart-service/cmd
+    environment:
+      <<: *go-env
+      HTTP_ADDR: ":8083"
+    ports:
+      - "8083:8083"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      product-service:
+        condition: service_started
+
+  order-service:
+    <<: *go-service
+    command: go run ./services/order-service/cmd
+    environment:
+      <<: *go-env
+      HTTP_ADDR: ":8085"
+    ports:
+      - "8085:8085"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      cart-service:
+        condition: service_started
+
+  ai-service:
+    <<: *go-service
+    command: go run ./services/ai-service/cmd
+    environment:
+      <<: *go-env
+      HTTP_ADDR: ":8086"
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      AI_MODEL: ${AI_MODEL:-gemini-3.6-flash}
+    ports:
+      - "8086:8086"
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      product-service:
+        condition: service_started
+      cart-service:
+        condition: service_started
+
+  api-gateway:
+    <<: *go-service
+    command: go run ./services/api-gateway
+    environment:
+      <<: *go-env
+      HTTP_ADDR: ":8081"
+      SUPABASE_URL: ${SUPABASE_URL:-}
+      SUPABASE_KEY: ${SUPABASE_KEY:-}
+    ports:
+      - "8081:8081"
+    depends_on:
+      - user-service
+      - product-service
+      - cart-service
+      - order-service
+      - ai-service
+
+volumes:
+  postgres-data:
+  go-mod-cache:

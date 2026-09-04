@@ -4,6 +4,7 @@ import (
 	"askshop/services/api-gateway/rest"
 	"askshop/shared/contracts"
 	"askshop/shared/env"
+	"askshop/shared/health"
 	"askshop/shared/response"
 	"context"
 	"fmt"
@@ -357,6 +358,8 @@ func main() {
 			response.Success(c, http.StatusOK, user, nil, "")
 		})
 	}
+
+	health.Register(router, "api-gateway")
 
 	// Add a root route
 	router.GET("/", func(c *gin.Context) {

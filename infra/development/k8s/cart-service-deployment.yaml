@@ -16,7 +16,7 @@ spec:
         - name: cart-service
           image: askshop/cart-service
           ports:
-            - containerPort: 8086
+            - containerPort: 8083
           resources:
             requests:
               memory: "64Mi"
@@ -33,7 +33,7 @@ spec:
   selector:
     app: cart-service
   ports:
-    - port: 8086
+    - port: 8083
       name: http
-      targetPort: 8086
+      targetPort: 8083
   type: ClusterIP

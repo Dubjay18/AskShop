@@ -16,7 +16,10 @@ spec:
         - name: product-service
           image: askshop/product-service
           ports:
-            - containerPort: 8083
+            - containerPort: 8082
+              name: http
+            - containerPort: 9090
+              name: grpc
           resources:
             requests:
               memory: "64Mi"
@@ -33,7 +36,10 @@ spec:
   selector:
     app: product-service
   ports:
-    - port: 8083
+    - port: 8082
       name: http
-      targetPort: 8083
+      targetPort: 8082
+    - port: 9090
+      name: grpc
+      targetPort: 9090
   type: ClusterIP

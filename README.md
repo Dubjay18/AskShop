@@ -276,14 +276,18 @@ The product service includes a gRPC definition under `shared/proto/product.proto
   product-service still degrades to an in-memory repository if Postgres is unreachable.
 - The AI cart-nudge endpoint has no scheduler wired up yet — it's designed to be triggered by
   cron/Tilt/an external job runner, not called automatically.
-- **Known bug in the Tilt/Kubernetes port config**: the container ports declared in
+- **Fixed: Tilt/Kubernetes port config drift.** The container ports in
   `infra/development/k8s/*-deployment.yaml`, the `port_forwards` in `Tiltfile`, and each
-  service's actual `HTTP_ADDR` default in code disagree with each other for product-service,
-  cart-service, ai-service, and order-service (e.g. product-service's code default is `:8082`,
-  its k8s `containerPort` is `8083`, and Tilt forwards `8082:8080`). This predates this revamp
-  and wasn't fixed here — untangling it needs a real cluster to verify against, which wasn't
-  available in this environment. `docker compose` (see above) sidesteps it entirely since it
-  reads the same `HTTP_ADDR` defaults as manual/`go run` execution. Fix before relying on Tilt.
+  service's actual `HTTP_ADDR` default in code used to disagree for product-service, cart-service,
+  ai-service, and order-service — and the API gateway's `HTTP_ADDR` was wired from a configmap key
+  (`GATEWAY_HTTP_ADDR`) the code never read, so changing it silently did nothing. All of these are
+  now aligned to each service's real default (product-service also gained a `grpc` port/service
+  entry for `:9090`, previously not exposed to other pods at all, which would have broken
+  cart-service's gRPC pricing lookups in-cluster). The seeder job's `golang:1.21` base image was
+  also bumped to `1.24-bookworm` to match `go.mod`'s `go 1.24.2` requirement. This was a static
+  consistency fix verified by YAML-parsing every edited manifest — not by deploying to a live
+  cluster, since none was available in this environment. Please sanity-check a real `tilt up`
+  before depending on it for anything important.
 - Tilt pipeline currently builds Linux/amd64 binaries; adjust if your target architecture differs.
 - `go test ./...` now covers cart-service and product-service's pure domain logic (see Testing
   above) plus a couple of `shared/` helpers — repository/handler layers and cross-service flows
